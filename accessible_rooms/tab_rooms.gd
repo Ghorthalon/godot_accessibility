@@ -122,7 +122,7 @@ func _refresh() -> void:
 		if c is Room3D:
 			var door_sides: Array[String] = []
 			for s in ["north", "south", "east", "west"]:
-				if c.walls.get(s, {}).get("openings", []).size() > 0:
+				if c.cfg(s).openings.size() > 0:
 					door_sides.append(s[0].to_upper())
 			var door_str := ("  [%s]" % " ".join(door_sides)) if door_sides.size() > 0 else ""
 			room_list.add_item("%s  pos %s  size %s%s" % [c.name, c.position, c.size, door_str])

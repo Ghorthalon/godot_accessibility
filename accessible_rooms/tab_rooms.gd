@@ -64,7 +64,7 @@ func _ready() -> void:
 # --- Room management ---
 
 func _new_root_room() -> void:
-	var root: Node = dock.scene_query.edited_root()
+	var root: Node = dock.scene_query.placement_parent()
 	if root == null: dock._say("No scene open."); return
 	var r := Room3D.new()
 	r.name = "Room%d" % (root.get_child_count() + 1)
@@ -77,7 +77,7 @@ func _new_root_room() -> void:
 
 func _add_neighbor(side: String) -> void:
 	if dock.current_room == null: dock._say("No current room."); return
-	var root: Node = dock.scene_query.edited_root()
+	var root: Node = dock.scene_query.placement_parent()
 	var r := Room3D.new()
 	r.name = "%s_%s" % [dock.current_room.name, side]
 	r.size = Vector3(new_w.value, new_h.value, new_d.value)
@@ -103,7 +103,7 @@ func _punch(side: String) -> void:
 func _apply_resize() -> void:
 	if dock.current_room == null: dock._say("No current room selected."); return
 	var new_size := Vector3(resize_w.value, resize_h.value, resize_d.value)
-	var root: Node = dock.scene_query.edited_root()
+	var root: Node = dock.scene_query.placement_parent()
 	if root:
 		for c in root.get_children():
 			if c is Room3D and c != dock.current_room:
@@ -116,7 +116,7 @@ func _apply_resize() -> void:
 
 func _refresh() -> void:
 	room_list.clear()
-	var root: Node = dock.scene_query.edited_root() if dock.scene_query else null
+	var root: Node = dock.scene_query.placement_parent() if dock.scene_query else null
 	if root == null: return
 	for c in root.get_children():
 		if c is Room3D:
@@ -136,7 +136,7 @@ func _on_select(i: int) -> void:
 	dock._say("Selected %s." % dock.current_room.name)
 
 func _bake_scene() -> void:
-	var root: Node = dock.scene_query.edited_root()
+	var root: Node = dock.scene_query.placement_parent()
 	if root == null: dock._say("No scene open."); return
 	var rooms: Array = []
 	for c in root.get_children():

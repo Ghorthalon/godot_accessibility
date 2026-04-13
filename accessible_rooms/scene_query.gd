@@ -3,14 +3,25 @@ class_name SceneQuery
 extends Node
 
 var plugin: EditorPlugin
+var dock  # dock.gd — may be null in isolated unit use
 
 func edited_root() -> Node:
 	return plugin.get_editor_interface().get_edited_scene_root()
 
+## Returns the node that new children should be added to.
+## When dock.use_selected_node is true and a node is selected, returns that node;
+## otherwise returns the edited scene root.
+func placement_parent() -> Node:
+	if dock != null and dock.use_selected_node:
+		var sel := plugin.get_editor_interface().get_selection().get_selected_nodes()
+		if sel.size() > 0:
+			return sel[0]
+	return edited_root()
+
 # All non-generated entities: Room3D nodes and user-placed PhysicsBody3D nodes.
 # Stops recursing into an entity once found, avoiding generated wall children.
 func entities_in_scene() -> Array[Node]:
-	var root := edited_root()
+	var root := placement_parent()
 	if root == null: return []
 	var result: Array[Node] = []
 	_collect(root, result)
@@ -37,7 +48,7 @@ func entity_label(entity: Node) -> String:
 	return entity.name
 
 func room_containing(p: Vector3) -> Room3D:
-	var root := edited_root()
+	var root := placement_parent()
 	if root == null: return null
 	for c in root.get_children():
 		if c is Room3D:

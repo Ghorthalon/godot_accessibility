@@ -72,7 +72,7 @@ func _ready() -> void:
 # --- Node placement ---
 
 func _insert_node_at_cursor() -> void:
-	var root: Node = dock.scene_query.edited_root()
+	var root: Node = dock.scene_query.placement_parent()
 	if root == null: dock._say("No scene open."); return
 	var type_name: String = node_type_option.get_item_text(node_type_option.selected)
 	var obj: Object = ClassDB.instantiate(type_name)
@@ -90,7 +90,7 @@ func _insert_scene_at_cursor() -> void:
 	if not ResourceLoader.exists(path): dock._say("Scene not found: %s" % path); return
 	var packed := load(path) as PackedScene
 	if packed == null: dock._say("Failed to load scene."); return
-	var root: Node = dock.scene_query.edited_root()
+	var root: Node = dock.scene_query.placement_parent()
 	if root == null: dock._say("No scene open."); return
 	var instance := packed.instantiate()
 	if instance is Node3D:

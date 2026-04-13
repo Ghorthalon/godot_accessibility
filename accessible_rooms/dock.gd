@@ -10,6 +10,8 @@ var step: float = 1.0
 var current_room: Room3D
 var scene_query: SceneQuery
 
+var use_selected_node: bool = false
+
 var announce: Label
 
 func _ready() -> void:
@@ -21,7 +23,17 @@ func _ready() -> void:
 
 	scene_query = SceneQuery.new()
 	scene_query.plugin = plugin
+	scene_query.dock = self
 	add_child(scene_query)
+
+	var toggle := CheckButton.new()
+	toggle.text = "Use selected node as parent"
+	toggle.tooltip_text = "When on, rooms and placed nodes are added as children of the currently selected node instead of the scene root."
+	toggle.toggled.connect(func(on: bool) -> void:
+		use_selected_node = on
+		_say("Parent: %s." % ("selected node" if on else "scene root"))
+	)
+	add_child(toggle)
 
 	var tabs := TabContainer.new()
 	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL

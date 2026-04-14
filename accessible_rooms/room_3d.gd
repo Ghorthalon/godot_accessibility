@@ -63,12 +63,13 @@ func rebuild() -> void:
 	_rebuild_queued = false
 	if not Engine.is_editor_hint(): return
 	for c in get_children():
-		if c.has_meta("generated"): c.queue_free()
+		if c.has_meta("generated") or c.has_meta("room_area"): c.queue_free()
 	await get_tree().process_frame
 	for side in SIDES:
 		var wall_cfg := cfg(side)
 		if wall_cfg == null or not wall_cfg.enabled: continue
 		_build_wall(side)
+	_build_room_area()
 
 func _build_wall(side: String) -> void:
 	var wall_cfg := cfg(side)
@@ -152,6 +153,22 @@ func _spawn_quad(side: String, surface: String, center: Vector3, bu: Vector3, bv
 	var root := get_tree().edited_scene_root
 	if root:
 		for n in [body, mi, cs]: n.owner = root
+
+func _build_room_area() -> void:
+	var area := Area3D.new()
+	area.set_meta("room_area", true)
+	area.name = "RoomArea"
+	area.position = Vector3(0, size.y / 2.0, 0)
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = size
+	cs.shape = box
+	area.add_child(cs)
+	add_child(area)
+	var root := get_tree().edited_scene_root
+	if root:
+		area.owner = root
+		cs.owner = root
 
 func neighbor_offset(side: String, other_size: Vector3) -> Vector3:
 	# Where to place a neighbour room so its opposite wall is flush with mine.

@@ -25,6 +25,8 @@ var _source_option: OptionButton
 var _tile_list: ItemList
 var _tile_info_label: RichTextLabel
 var _custom_data_container: VBoxContainer
+var _physics_layer_list: ItemList
+var _collision_container: VBoxContainer
 var _add_scene_tile_button: Button
 var _remove_tile_button: Button
 
@@ -142,6 +144,32 @@ func _build_ui() -> void:
 	remove_layer_btn.pressed.connect(_on_remove_layer_pressed)
 	layer_buttons.add_child(remove_layer_btn)
 
+	# --- Physics layers ---
+	_make_label(root, "Physics layers:")
+	_physics_layer_list = ItemList.new()
+	_physics_layer_list.custom_minimum_size = Vector2(0, 60)
+	_physics_layer_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_set_a11y(_physics_layer_list, "Physics layer list",
+		"Physics layers defined on this TileSet. Each tile can have collision polygons per layer.")
+	root.add_child(_physics_layer_list)
+
+	var phys_buttons := HBoxContainer.new()
+	root.add_child(phys_buttons)
+
+	var add_phys_btn := Button.new()
+	add_phys_btn.text = "Add physics layer"
+	_set_a11y(add_phys_btn, "Add physics layer",
+		"Add a new physics layer to this TileSet. Tiles can then have collision polygons on it.")
+	add_phys_btn.pressed.connect(_on_add_physics_layer_pressed)
+	phys_buttons.add_child(add_phys_btn)
+
+	var remove_phys_btn := Button.new()
+	remove_phys_btn.text = "Remove physics layer"
+	_set_a11y(remove_phys_btn, "Remove selected physics layer",
+		"Remove the selected physics layer from this TileSet. All tile collision data on it is lost.")
+	remove_phys_btn.pressed.connect(_on_remove_physics_layer_pressed)
+	phys_buttons.add_child(remove_phys_btn)
+
 	# --- Source chooser ---
 	_make_label(root, "Source:")
 	_source_option = OptionButton.new()
@@ -220,6 +248,12 @@ func _build_ui() -> void:
 	_custom_data_container = VBoxContainer.new()
 	_custom_data_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	root.add_child(_custom_data_container)
+
+	# --- Collision editor ---
+	_make_label(root, "Collision (per physics layer):")
+	_collision_container = VBoxContainer.new()
+	_collision_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.add_child(_collision_container)
 
 
 # ----- TileSet lifecycle -----
@@ -559,6 +593,7 @@ func _on_remove_source_pressed() -> void:
 func _refresh_all() -> void:
 	_refresh_status()
 	_refresh_layer_list()
+	_refresh_physics_layer_list()
 	_refresh_sources()
 
 
@@ -603,6 +638,7 @@ func _on_source_selected(idx: int) -> void:
 	_tile_list.clear()
 	_tile_info_label.text = ""
 	_clear_custom_data_fields()
+	_clear_collision_fields()
 	if _tileset == null or idx < 0 or idx >= _source_ids.size():
 		return
 	var sid := _source_ids[idx]
@@ -667,6 +703,7 @@ func _find_custom_data_layer_index(layer_name: String) -> int:
 
 func _on_tile_selected(idx: int) -> void:
 	_clear_custom_data_fields()
+	_clear_collision_fields()
 	var src_idx := _source_option.selected
 	if _tileset == null or src_idx < 0 or src_idx >= _source_ids.size():
 		return
@@ -704,14 +741,13 @@ func _show_atlas_tile_detail(atlas: TileSetAtlasSource, coords: Vector2i) -> voi
 		lines.append("  %s = %s" % [lname, str(lval)])
 		_add_custom_data_editor(atlas, coords, i, lname, lval)
 
-	var nphys := _tileset.get_physics_layers_count()
-	if nphys > 0:
-		lines.append("%d physics layer(s), polygon counts: %s" % [
-			nphys, _physics_polygon_summary(data, nphys)
-		])
-
 	_tile_info_label.text = "\n".join(lines)
 	announcer.speak(_short_announce_for_atlas(atlas, coords, data))
+
+	_clear_collision_fields()
+	var nphys := _tileset.get_physics_layers_count()
+	for i in nphys:
+		_add_collision_editor(atlas, coords, i)
 
 
 func _physics_polygon_summary(data: TileData, nphys: int) -> String:
@@ -719,6 +755,103 @@ func _physics_polygon_summary(data: TileData, nphys: int) -> String:
 	for i in nphys:
 		parts.append(str(data.get_collision_polygons_count(i)))
 	return ", ".join(parts)
+
+
+# ----- Physics layer management -----
+
+func _refresh_physics_layer_list() -> void:
+	_physics_layer_list.clear()
+	if _tileset == null:
+		return
+	for i in _tileset.get_physics_layers_count():
+		_physics_layer_list.add_item("Layer %d" % i)
+
+
+func _on_add_physics_layer_pressed() -> void:
+	if _tileset == null:
+		announcer.speak("No TileSet loaded.", AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	_tileset.add_physics_layer()
+	var idx := _tileset.get_physics_layers_count() - 1
+	_refresh_physics_layer_list()
+	announcer.speak("Added physics layer %d." % idx, AccessibleAnnouncer.Priority.ASSERTIVE)
+
+
+func _on_remove_physics_layer_pressed() -> void:
+	if _tileset == null:
+		announcer.speak("No TileSet loaded.", AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	var selected := _physics_layer_list.get_selected_items()
+	if selected.is_empty():
+		announcer.speak("No physics layer selected.", AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	var idx: int = selected[0]
+	_tileset.remove_physics_layer(idx)
+	_refresh_physics_layer_list()
+	_clear_collision_fields()
+	var src_idx := _source_option.selected
+	if src_idx >= 0 and src_idx < _source_ids.size():
+		var tile_selected := _tile_list.get_selected_items()
+		if not tile_selected.is_empty():
+			_on_tile_selected(tile_selected[0])
+	announcer.speak("Removed physics layer %d." % idx, AccessibleAnnouncer.Priority.ASSERTIVE)
+
+
+# ----- Collision editing -----
+
+func _clear_collision_fields() -> void:
+	for c in _collision_container.get_children():
+		c.queue_free()
+
+
+func _add_collision_editor(atlas: TileSetAtlasSource, coords: Vector2i, layer_idx: int) -> void:
+	var data := atlas.get_tile_data(coords, 0)
+	if data == null:
+		return
+	var has_collision := data.get_collision_polygons_count(layer_idx) > 0
+
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_collision_container.add_child(row)
+
+	var lbl := Label.new()
+	lbl.text = "Layer %d:" % layer_idx
+	lbl.custom_minimum_size = Vector2(70, 0)
+	row.add_child(lbl)
+
+	var cb := CheckBox.new()
+	cb.text = "Solid (full tile)"
+	cb.button_pressed = has_collision
+	_set_a11y(cb, "Collision layer %d" % layer_idx,
+		"Check to add a full-tile collision rectangle on physics layer %d; uncheck to remove it." % layer_idx)
+	cb.toggled.connect(func(checked: bool) -> void:
+		_on_collision_toggled(checked, atlas, coords, layer_idx)
+	)
+	row.add_child(cb)
+
+
+func _on_collision_toggled(checked: bool, atlas: TileSetAtlasSource, coords: Vector2i, layer_idx: int) -> void:
+	var data := atlas.get_tile_data(coords, 0)
+	if data == null:
+		return
+	var count := data.get_collision_polygons_count(layer_idx)
+	for i in range(count - 1, -1, -1):
+		data.remove_collision_polygon(layer_idx, i)
+	if checked:
+		data.add_collision_polygon(layer_idx)
+		data.set_collision_polygon_points(layer_idx, 0, _make_full_tile_rect(atlas))
+		announcer.speak("Layer %d collision enabled." % layer_idx, AccessibleAnnouncer.Priority.ASSERTIVE)
+	else:
+		announcer.speak("Layer %d collision disabled." % layer_idx, AccessibleAnnouncer.Priority.ASSERTIVE)
+
+
+func _make_full_tile_rect(atlas: TileSetAtlasSource) -> PackedVector2Array:
+	var hw := atlas.texture_region_size.x / 2.0
+	var hh := atlas.texture_region_size.y / 2.0
+	return PackedVector2Array([
+		Vector2(-hw, -hh), Vector2(hw, -hh),
+		Vector2(hw, hh), Vector2(-hw, hh),
+	])
 
 
 func _short_announce_for_atlas(atlas: TileSetAtlasSource, coords: Vector2i, data: TileData) -> String:
@@ -741,6 +874,7 @@ func _show_scene_tile_detail(sc: TileSetScenesCollectionSource, scene_id: int) -
 	var packed: PackedScene = sc.get_scene_tile_scene(scene_id)
 	var path := packed.resource_path if packed != null else "(unset)"
 	_tile_info_label.text = "Scene tile id %d\nScene: %s" % [scene_id, path]
+	_clear_collision_fields()
 	announcer.speak("Scene tile %d, %s" % [scene_id, path.get_file()])
 
 

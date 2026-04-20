@@ -60,4 +60,5 @@ func _on_tab_changed(idx: int) -> void:
 	if tab == null:
 		return
 	if tab.has_method(&"grab_entry_focus"):
+		pass
 		# tab.call_deferred(&"grab_entry_focus")

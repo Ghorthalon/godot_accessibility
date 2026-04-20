@@ -3,7 +3,7 @@ extends EditorPlugin
 
 
 
-const Dock := preload("res://addons/accessible_tilemap/dock.gd")
+const Dock = preload("res://addons/accessible_tilemap/dock.gd")
 
 var _dock: Control = null
 

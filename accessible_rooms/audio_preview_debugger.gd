@@ -27,7 +27,7 @@ func has_active_session() -> bool:
 
 func send_cursor(pos: Vector3) -> void:
 	if _active_session == null or not is_instance_valid(_active_session):
-		push_warning("AudioPreviewDebugger: no active session — is a game running?")
+		push_warning("AudioPreviewDebugger: no active session. Is a game running?")
 		return
 	if not _active_session.is_active():
 		push_warning("AudioPreviewDebugger: session exists but is_active() == false")

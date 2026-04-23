@@ -1,6 +1,6 @@
 @tool
 class_name Room3D
-extends Node3D
+extends SpatialEntity3D
 
 const SIDES := ["north", "south", "east", "west", "floor", "ceiling"]
 # +Z = south, -Z = north, +X = east, -X = west (Godot convention)
@@ -18,6 +18,7 @@ const NORMALS := {
 @export var wall_floor:   WallConfig = WallConfig.new(): set = _set_fl
 @export var wall_ceiling: WallConfig = WallConfig.new(): set = _set_cl
 @export var rebuild_now:  bool = false: set = _trigger
+@export var door_list: Array[DoorEntry] = []
 
 var _rebuild_queued := false
 
@@ -37,11 +38,28 @@ func _rewire(old: WallConfig, new_cfg: WallConfig) -> void:
 		new_cfg.changed.connect(_queue_rebuild)
 
 func _enter_tree() -> void:
-	# Safety net: ensure signals are wired after scene load or tree re-entry.
+	add_to_group("accessible_rooms_rooms")
+	set_notify_transform(true)
+	
 	for s in SIDES:
 		var c := cfg(s)
 		if c and not c.changed.is_connected(_queue_rebuild):
 			c.changed.connect(_queue_rebuild)
+
+func _exit_tree() -> void:
+	remove_from_group("accessible_rooms_rooms")
+	_queue_rebuild_siblings()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSFORM_CHANGED:
+		_queue_rebuild()
+		_queue_rebuild_siblings()
+
+func _queue_rebuild_siblings() -> void:
+	if not is_inside_tree(): return
+	for node in get_tree().get_nodes_in_group("accessible_rooms_rooms"):
+		if node != self and node is Room3D:
+			(node as Room3D)._queue_rebuild()
 
 ## Returns the WallConfig for the given side name.
 func cfg(side: String) -> WallConfig:
@@ -59,11 +77,20 @@ func _queue_rebuild() -> void:
 		_rebuild_queued = true
 		call_deferred("rebuild")
 
+func _sync_doors_to_openings() -> void:
+	for s in SIDES:
+		cfg(s).openings.clear()
+	for d in door_list:
+		cfg(d.side).openings.append(
+			Rect2(d.center_u - d.width/2, d.center_v - d.height/2, d.width, d.height))
+
 func rebuild() -> void:
 	_rebuild_queued = false
+	_sync_doors_to_openings()
 	if not Engine.is_editor_hint(): return
 	for c in get_children():
 		if c.has_meta("generated") or c.has_meta("room_area"): c.queue_free()
+	if not is_inside_tree(): return
 	await get_tree().process_frame
 	for side in SIDES:
 		var wall_cfg := cfg(side)
@@ -97,7 +124,7 @@ func _build_wall(side: String) -> void:
 			center = Vector3(-size.x/2, size.y/2, 0)
 			basis_u = Vector3.FORWARD; basis_v = Vector3.UP
 
-	var rects := _slice([Rect2(-u/2, -v/2, u, v)], wall_cfg.openings)
+	var rects := _slice([Rect2(-u/2, -v/2, u, v)], wall_cfg.openings + _get_overlap_suppressions(side))
 	for i in rects.size():
 		_spawn_quad(side, wall_cfg.surface, center, basis_u, basis_v, rects[i], i)
 
@@ -107,6 +134,51 @@ func _build_wall(side: String) -> void:
 		var zone: Dictionary = wall_cfg.zones[i]
 		_spawn_quad(side, zone.get("surface", "concrete"),
 				center + zone_off, basis_u, basis_v, zone["rect"], rects.size() + i)
+
+static func _wall_plane_coord(room: Room3D, side: String) -> float:
+	match side:
+		"north": return room.position.z - room.size.z / 2.0
+		"south": return room.position.z + room.size.z / 2.0
+		"east":  return room.position.x + room.size.x / 2.0
+		"west":  return room.position.x - room.size.x / 2.0
+	return 0.0
+
+func _compute_wall_local_overlap(side: String, other: Room3D) -> Rect2:
+	var y_hi := minf(size.y, other.size.y)
+	if y_hi <= 0.001: return Rect2()
+	var v_lo := -size.y / 2.0
+	var v_hi := y_hi - size.y / 2.0
+	match side:
+		"north", "south":
+			var x_lo := maxf(position.x - size.x/2.0, other.position.x - other.size.x/2.0)
+			var x_hi := minf(position.x + size.x/2.0, other.position.x + other.size.x/2.0)
+			if x_hi - x_lo <= 0.001: return Rect2()
+			return Rect2(x_lo - position.x, v_lo, x_hi - x_lo, v_hi - v_lo)
+		"east", "west":
+			var z_lo := maxf(position.z - size.z/2.0, other.position.z - other.size.z/2.0)
+			var z_hi := minf(position.z + size.z/2.0, other.position.z + other.size.z/2.0)
+			if z_hi - z_lo <= 0.001: return Rect2()
+			# basis_u = FORWARD = -Z, so u = position.z - world_z (reversed)
+			return Rect2(position.z - z_hi, v_lo, z_hi - z_lo, v_hi - v_lo)
+	return Rect2()
+
+func _get_overlap_suppressions(side: String) -> Array[Rect2]:
+	if not is_inside_tree(): return []
+	var opp := neighbor_doorway_side(side)
+	if opp.is_empty(): return []
+	var result: Array[Rect2] = []
+	const EPSILON := 0.001
+	for node in get_tree().get_nodes_in_group("accessible_rooms_rooms"):
+		if node == self or not node is Room3D: continue
+		var other := node as Room3D
+		if absf(_wall_plane_coord(self, side) - _wall_plane_coord(other, opp)) > EPSILON:
+			continue
+		var overlap := _compute_wall_local_overlap(side, other)
+		if overlap.size.x <= EPSILON or overlap.size.y <= EPSILON: continue
+		# Lower node path wins. higher path suppresses its geometry in the overlap.
+		if str(get_path()) < str(other.get_path()): continue
+		result.append(overlap)
+	return result
 
 func _slice(rects: Array, openings: Array) -> Array:
 	for hole in openings:
@@ -170,6 +242,30 @@ func _build_room_area() -> void:
 		area.owner = root
 		cs.owner = root
 
+# ---------------------------------------------------------------------------
+# SpatialEntity3D interface
+# ---------------------------------------------------------------------------
+
+func entity_label() -> String:
+	return "%s (room, %.0fx%.0fx%.0f m)" % [name, size.x, size.y, size.z]
+
+func contains_point(p: Vector3) -> bool:
+	var lp := p - position
+	return absf(lp.x) <= size.x / 2.0 and lp.y >= 0 and lp.y <= size.y and absf(lp.z) <= size.z / 2.0
+
+func populate_properties_ui(c: VBoxContainer) -> void:
+	_add_spinbox(c, "W:", 1.0, 200.0, 1.0, size.x)
+	_add_spinbox(c, "H:", 1.0, 100.0, 0.5, size.y)
+	_add_spinbox(c, "D:", 1.0, 200.0, 1.0, size.z)
+
+func apply_properties_ui(c: VBoxContainer) -> void:
+	var spins: Array[SpinBox] = []
+	for row in c.get_children():
+		for child in row.get_children():
+			if child is SpinBox: spins.append(child as SpinBox)
+	if spins.size() >= 3:
+		self.size = Vector3(spins[0].value, spins[1].value, spins[2].value)
+
 func neighbor_offset(side: String, other_size: Vector3) -> Vector3:
 	# Where to place a neighbour room so its opposite wall is flush with mine.
 	match side:
@@ -179,13 +275,26 @@ func neighbor_offset(side: String, other_size: Vector3) -> Vector3:
 		"west":  return Vector3(-(size.x/2 + other_size.x/2), 0, 0)
 	return Vector3.ZERO
 
+func neighbor_doorway_side(side: String) -> String:
+	var opp := {"north": "south", "south": "north", "east": "west", "west": "east"}
+	return opp.get(side, "")
+
+func has_wall(_side: String) -> bool:
+	return true
+
 func punch_doorway(side: String, width := 1.2, height := 2.1) -> void:
-	## Replaces all openings on this wall with a single centred floor-level doorway.
-	cfg(side).openings.clear()
+	## Appends a centred floorlevel doorway without removing existing ones.
 	add_doorway(side, 0.0, -size.y / 2.0 + height / 2.0, width, height)
 
-func add_doorway(side: String, center_u: float, center_v: float, width := 1.2, height := 2.1) -> void:
-	## Appends an opening at a specific wall-local position without replacing existing ones.
-	## center_u/v are in wall-local 2D coordinates (metres, origin = wall centre).
-	cfg(side).openings.append(Rect2(center_u - width/2, center_v - height/2, width, height))
+func add_doorway(side: String, center_u: float, center_v: float, width := 1.2, height := 2.1, label := "") -> void:
+	## Appends a doorway at a walllocal position. center_u/v in metres, origin = wall centre.
+	var d := DoorEntry.new()
+	d.side = side; d.center_u = center_u; d.center_v = center_v
+	d.width = width; d.height = height; d.label = label
+	door_list.append(d)
 	_queue_rebuild()
+
+func remove_door(idx: int) -> void:
+	if idx >= 0 and idx < door_list.size():
+		door_list.remove_at(idx)
+		_queue_rebuild()

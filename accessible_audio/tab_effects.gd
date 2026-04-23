@@ -5,20 +5,20 @@ var dock  # reference to parent dock (dock.gd)
 
 var effect_list: ItemList
 var effect_type: OptionButton
-var effect_props_box: VBoxContainer   # rebuilt when an effect is selected
+var effect_props_box: VBoxContainer
 
-# Tracks which effect's properties are currently shown
 var _current_eff_idx: int = -1
 # Array of [prop_name: String, control: Control] for the active property panel
 var _prop_controls: Array = []
 
-# Internal property names shared by all Resources. skip these
+# Internal property names shared by all Resources, skip these
 const _SKIP_PROPS := ["script", "resource_local_to_scene", "resource_path", "resource_name"]
 
 const EFFECT_CLASSES := [
 	["Amplify", "AudioEffectAmplify"],
 	["Band Limit Filter", "AudioEffectBandLimitFilter"],
 	["Band Pass Filter", "AudioEffectBandPassFilter"],
+	["Capture", "AudioEffectCapture"],
 	["Chorus", "AudioEffectChorus"],
 	["Compressor", "AudioEffectCompressor"],
 	["Delay", "AudioEffectDelay"],
@@ -28,6 +28,7 @@ const EFFECT_CLASSES := [
 	["EQ 21-band", "AudioEffectEQ21"],
 	["High Pass Filter", "AudioEffectHighPassFilter"],
 	["High Shelf Filter", "AudioEffectHighShelfFilter"],
+	["Hard Limiter", "AudioEffectHardLimiter"],
 	["Limiter", "AudioEffectLimiter"],
 	["Low Pass Filter", "AudioEffectLowPassFilter"],
 	["Low Shelf Filter", "AudioEffectLowShelfFilter"],
@@ -63,7 +64,7 @@ func _ready() -> void:
 	effect_type.accessibility_name = "Effect type to add"
 	for pair in EFFECT_CLASSES:
 		effect_type.add_item(pair[0])
-	effect_type.selected = 20  # Default: Reverb
+	effect_type.selected = 22  # Default: Reverb
 	add_child(effect_type)
 
 	_btn("Add effect to bus", _add_effect)
@@ -86,7 +87,6 @@ func _ready() -> void:
 
 	add_child(HSeparator.new())
 
-	# Scrollable property editor
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -98,9 +98,9 @@ func _ready() -> void:
 
 	_refresh()
 
-
+# ---------------------------------------------------------------------------
 # Effect list
-
+# ---------------------------------------------------------------------------
 
 func _refresh() -> void:
 	effect_list.clear()
@@ -122,16 +122,16 @@ func _refresh() -> void:
 		effect_list.set_item_metadata(effect_list.item_count - 1, j)
 
 func _on_effect_select(i: int) -> void:
-	# Items without metadata are placeholders
+	# Items without metadata are placeholders, ignore
 	var meta = effect_list.get_item_metadata(i)
 	if meta == null:
 		return
 	_current_eff_idx = int(meta)
 	_populate_effect_editor(dock.current_bus_idx, _current_eff_idx)
 
-
+# ---------------------------------------------------------------------------
 # Effect property editor
-
+# ---------------------------------------------------------------------------
 
 func _clear_props() -> void:
 	_prop_controls.clear()
@@ -160,7 +160,7 @@ func _populate_effect_editor(bus_idx: int, eff_idx: int) -> void:
 		var phint_str: String = prop["hint_string"]
 		var pusage: int = prop["usage"]
 
-		# Skip non-editor and internal properties
+		# Skip noneditor and internal properties
 		if pusage & PROPERTY_USAGE_EDITOR == 0:
 			continue
 		if pname in _SKIP_PROPS:
@@ -170,7 +170,6 @@ func _populate_effect_editor(bus_idx: int, eff_idx: int) -> void:
 
 		var row := HBoxContainer.new()
 		var lbl := Label.new()
-		# Convert snake_case to "Title Case" for readability
 		lbl.text = pname.replace("_", " ").capitalize() + ":"
 		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(lbl)
@@ -180,7 +179,6 @@ func _populate_effect_editor(bus_idx: int, eff_idx: int) -> void:
 			continue
 		ctrl.accessibility_name = pname.replace("_", " ").capitalize()
 
-		# Pre-fill current value
 		var current_val = eff.get(pname)
 		if current_val != null:
 			_set_control_value(ctrl, current_val)
@@ -235,7 +233,7 @@ func _make_control(ptype: int, phint: int, phint_str: String) -> Control:
 			cb.text = ""
 			return cb
 
-	return null  # Unsupported type
+	return null  # Unsupported type, row is skipped
 
 func _set_control_value(ctrl: Control, value: Variant) -> void:
 	if ctrl is SpinBox:
@@ -271,9 +269,9 @@ func _apply_effect_props() -> void:
 	var display := eff.get_class().trim_prefix("AudioEffect")
 	dock._say("Applied properties for %s." % display)
 
-
+# ---------------------------------------------------------------------------
 # Effect list mutations
-
+# ---------------------------------------------------------------------------
 
 func _add_effect() -> void:
 	var bus_idx: int = dock.current_bus_idx
@@ -341,9 +339,9 @@ func _move_effect_down() -> void:
 		_current_eff_idx = eff_idx + 1
 	dock._say("Moved effect down to position %d." % (eff_idx + 2))
 
-
+# ---------------------------------------------------------------------------
 # Helpers
-
+# ---------------------------------------------------------------------------
 
 func _selected_effect_idx() -> int:
 	var sel := effect_list.get_selected_items()

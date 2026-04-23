@@ -42,7 +42,7 @@ var _palette_coords: Vector2i = Vector2i.ZERO  # for atlas sources
 var _palette_alt: int = 0
 var _palette_tiles: Array = []  # Array of {source_id, coords, alt, label}
 var _bookmarks: Dictionary = {}  # int slot (0–9) -> Vector2i
-var atlas_tab  # set by dock.gd; used to auto-assign TileSet when layer has none
+var atlas_tab  # set by dock.gd, used to auto-assign TileSet when layer has none
 
 
 func _ready() -> void:
@@ -205,7 +205,7 @@ func _refresh_palette() -> void:
 		_palette_option.add_item("(no active layer)")
 		return
 
-	# Auto-assign from Atlas tab if this layer has no TileSet yet.
+	# Autoassign from Atlas tab if this layer has no TileSet yet.
 	if _active_layer.tile_set == null and atlas_tab != null and is_instance_valid(atlas_tab) \
 			and atlas_tab._tileset != null:
 		if editor_undo_redo != null:
@@ -219,7 +219,7 @@ func _refresh_palette() -> void:
 			AccessibleAnnouncer.Priority.ASSERTIVE)
 
 	if _active_layer.tile_set == null:
-		_palette_option.add_item("(no tileset — load one in the Atlas tab, then press Refresh)")
+		_palette_option.add_item("(no tileset, load one in the Atlas tab, then press Refresh)")
 		announcer.speak("No TileSet available. Load or create a TileSet in the Atlas tab first, then press Refresh here.",
 			AccessibleAnnouncer.Priority.ASSERTIVE)
 		return

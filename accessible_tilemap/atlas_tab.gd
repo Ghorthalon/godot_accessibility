@@ -520,7 +520,7 @@ func _on_add_atlas_source_pressed() -> void:
 	size_row.add_child(h_field)
 
 	var tex_lbl := Label.new()
-	tex_lbl.text = "Texture path (optional — leave blank for data-first workflow):"
+	tex_lbl.text = "Texture path (optional,  leave blank for datafirst workflow):"
 	tex_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vb.add_child(tex_lbl)
 
@@ -881,7 +881,7 @@ func _show_scene_tile_detail(sc: TileSetScenesCollectionSource, scene_id: int) -
 # ----- Atlas tile add -----
 
 func _next_free_atlas_coords(atlas: TileSetAtlasSource) -> Vector2i:
-	# Scan row 0 left-to-right until we find an unused slot.
+	# Scan row 0 left to right until we find an unused slot.
 	var x := 0
 	while atlas.has_tile(Vector2i(x, 0)):
 		x += 1
@@ -928,7 +928,7 @@ func _on_add_atlas_tile_pressed() -> void:
 		atlas.create_tile(coords)
 		var tile_name := field.text.strip_edges()
 		if not tile_name.is_empty():
-			# Auto-create the "name" layer if it doesn't exist yet.
+			# Autocreate the "name" layer if it doesn't exist yet.
 			var nlayer_idx := _find_custom_data_layer_index("name")
 			if nlayer_idx < 0:
 				_tileset.add_custom_data_layer()
@@ -1098,7 +1098,7 @@ func _commit_custom_data(
 
 
 func _coerce_value(text: String, type: int) -> Variant:
-	# Variant.Type ints - converting to the typed layer expects native type.
+	# Variant.Type ints  converting to the typed layer expects native type.
 	match type:
 		TYPE_BOOL:
 			return text.to_lower() in ["true", "1", "yes", "y"]

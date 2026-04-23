@@ -27,7 +27,7 @@ func speak(text: String, priority: Priority = Priority.POLITE) -> void:
 
 	if _live_label != null and is_instance_valid(_live_label):
 		# AccessKit only fires on a text change. If we're saying the same thing
-		# twice (e.g. arrow-key spam on the same cell), append a zero-width
+		# twice (e.g. arrow-key spam on the same cell), append a zerowidth
 		# space to force a change.
 		if _live_label.text == text:
 			_live_label.text = text + "\u200b"

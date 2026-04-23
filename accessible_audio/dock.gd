@@ -11,7 +11,7 @@ var tab_buses
 var tab_effects
 
 func _ready() -> void:
-	name = "Accessible Audio"
+	name = "Audio"
 
 	announce = Label.new()
 	announce.accessibility_live = 1  # ACCESSIBILITY_LIVE_POLITE

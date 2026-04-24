@@ -13,12 +13,18 @@ var current_animation: Animation = null
 var current_animation_name: StringName = &""
 var current_track: int = -1
 
+# --- Mode ---
+var _in_resource_mode: bool = false
+
 # --- UI ---
 var _announce: Label
 var _player_label: Label
+var _anim_row: HBoxContainer
 var _anim_option: OptionButton
+var _save_btn: Button
 var _length_spin: SpinBox
 var _loop_option: OptionButton
+var _playback_row: HBoxContainer
 var _play_btn: Button
 var _stop_btn: Button
 var _seek_spin: SpinBox
@@ -115,24 +121,29 @@ func _build_ui() -> void:
 	# Animation section
 	_section("Animation")
 
-	var anim_row := HBoxContainer.new()
-	anim_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	add_child(anim_row)
+	_anim_row = HBoxContainer.new()
+	_anim_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_child(_anim_row)
 
 	_anim_option = OptionButton.new()
 	_anim_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_anim_option.disabled = true
 	_set_a11y(_anim_option, "Active animation", "The animation to edit.")
 	_anim_option.item_selected.connect(_on_animation_selected)
-	anim_row.add_child(_anim_option)
+	_anim_row.add_child(_anim_option)
 
 	var new_btn := _btn("New", _new_animation_dialog)
 	_set_a11y(new_btn, "New animation", "Create a new blank animation on this AnimationPlayer.")
-	anim_row.add_child(new_btn)
+	_anim_row.add_child(new_btn)
 
 	var del_anim_btn := _btn("Delete", _delete_animation)
 	_set_a11y(del_anim_btn, "Delete animation", "Remove the currently selected animation.")
-	anim_row.add_child(del_anim_btn)
+	_anim_row.add_child(del_anim_btn)
+
+	_save_btn = _btn("Save Resource", _save_resource)
+	_set_a11y(_save_btn, "Save animation resource", "Write changes to the .tres file on disk.")
+	_save_btn.visible = false
+	add_child(_save_btn)
 
 	var meta_row := HBoxContainer.new()
 	meta_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -157,26 +168,26 @@ func _build_ui() -> void:
 	# Playback section
 	_section("Playback")
 
-	var play_row := HBoxContainer.new()
-	add_child(play_row)
+	_playback_row = HBoxContainer.new()
+	add_child(_playback_row)
 
 	_play_btn = _btn("Play", _on_play)
 	_play_btn.disabled = true
 	_set_a11y(_play_btn, "Play animation", "Play the selected animation on the AnimationPlayer.")
-	play_row.add_child(_play_btn)
+	_playback_row.add_child(_play_btn)
 
 	_stop_btn = _btn("Stop", _on_stop)
 	_stop_btn.disabled = true
 	_set_a11y(_stop_btn, "Stop animation")
-	play_row.add_child(_stop_btn)
+	_playback_row.add_child(_stop_btn)
 
-	play_row.add_child(_lbl("  Seek (s):"))
+	_playback_row.add_child(_lbl("  Seek (s):"))
 	_seek_spin = SpinBox.new()
 	_seek_spin.min_value = 0.0; _seek_spin.max_value = 3600.0; _seek_spin.step = 0.001
 	_seek_spin.editable = false
 	_set_a11y(_seek_spin, "Seek time in seconds", "Jump the animation and timeline cursor to this time.")
 	_seek_spin.value_changed.connect(_on_seek_changed)
-	play_row.add_child(_seek_spin)
+	_playback_row.add_child(_seek_spin)
 
 	# Tracks section
 	_section("Tracks")
@@ -272,9 +283,53 @@ func _set_player(player: AnimationPlayer) -> void:
 	if current_player == player:
 		return
 	current_player = player
+	_in_resource_mode = false
+	_anim_row.visible = true
+	_save_btn.visible = false
+	_playback_row.visible = true
 	_player_label.text = "AnimationPlayer: " + str(player.get_path())
 	_refresh_animations()
 	_say("AnimationPlayer detected: " + player.name)
+
+
+func _set_animation_resource(anim: Animation) -> void:
+	if _in_resource_mode and current_animation == anim:
+		return
+	current_player = null
+	_in_resource_mode = true
+	current_animation = anim
+	current_animation_name = StringName(anim.resource_path.get_file().get_basename())
+	current_track = -1
+
+	_player_label.text = "Animation Resource: " + anim.resource_path
+	_anim_row.visible = false
+	_save_btn.visible = true
+	_playback_row.visible = false
+
+	_ignore_signals = true
+	_length_spin.editable = true
+	_length_spin.value = anim.length
+	_loop_option.disabled = false
+	_loop_option.select(int(anim.loop_mode))
+	_seek_spin.max_value = anim.length
+	_ignore_signals = false
+
+	_refresh_tracks()
+	if _timeline != null:
+		_timeline.current_time = 0.0
+		_timeline.queue_redraw()
+	_info_label.text = "Animation: %s | Length: %.3f s" % [current_animation_name, anim.length]
+	_say("Animation resource loaded: " + current_animation_name)
+
+
+func _save_resource() -> void:
+	if current_animation == null or not _in_resource_mode:
+		return
+	if current_animation.resource_path.is_empty():
+		_say("Cannot save: animation has no file path.")
+		return
+	ResourceSaver.save(current_animation)
+	_say("Saved: " + current_animation.resource_path.get_file())
 
 
 # Animation list

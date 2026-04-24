@@ -313,9 +313,16 @@ func _on_save_tileset_pressed() -> void:
 		announcer.speak("TileSet has no path. Load it from a file first.",
 			AccessibleAnnouncer.Priority.ASSERTIVE)
 		return
-	var err := ResourceSaver.save(_tileset, _tileset_path)
+	if "::" in _tileset_path:
+		announcer.speak(
+			"Cannot save: this TileSet is embedded inside a scene file. "
+			"Use 'New TileSet' to save it as a standalone .tres file first.",
+			AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	var err := ResourceSaver.save(_tileset, _tileset_path, ResourceSaver.FLAG_BUNDLE_RESOURCES)
 	if err != OK:
-		announcer.speak("Save failed (error %d)." % err, AccessibleAnnouncer.Priority.ASSERTIVE)
+		announcer.speak("Save failed (error %d). Check the Godot Output panel for details." % err,
+			AccessibleAnnouncer.Priority.ASSERTIVE)
 		return
 	announcer.speak("Saved TileSet to %s." % _tileset_path.get_file(),
 		AccessibleAnnouncer.Priority.ASSERTIVE)
@@ -623,6 +630,11 @@ func _refresh_sources() -> void:
 	if _source_option.item_count > 0:
 		_source_option.select(0)
 		_on_source_selected(0)
+	else:
+		_tile_list.clear()
+		_tile_info_label.text = ""
+		_clear_custom_data_fields()
+		_clear_collision_fields()
 
 
 func _source_label(sid: int, src: TileSetSource) -> String:
@@ -1095,6 +1107,14 @@ func _commit_custom_data(
 
 	announcer.speak("Set %s to %s." % [layer_name, str(converted)],
 		AccessibleAnnouncer.Priority.ASSERTIVE)
+
+	var tile_arr := _tile_list.get_selected_items()
+	if not tile_arr.is_empty():
+		var src_idx := _source_option.selected
+		if src_idx >= 0 and src_idx < _source_ids.size():
+			var src2 := _tileset.get_source(_source_ids[src_idx])
+			if src2 != null:
+				_tile_list.set_item_text(tile_arr[0], _tile_list_label(src2, tile_arr[0]))
 
 
 func _coerce_value(text: String, type: int) -> Variant:

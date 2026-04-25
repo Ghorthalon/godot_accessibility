@@ -15,7 +15,12 @@ func placement_parent() -> Node:
 	if dock != null and dock.use_selected_node:
 		var sel := plugin.get_editor_interface().get_selection().get_selected_nodes()
 		if sel.size() > 0:
-			return sel[0]
+			var node := sel[0]
+			if node is SpatialEntity3D:
+				var parent := node.get_parent()
+				if parent != null: return parent
+			else:
+				return node
 	return edited_root()
 
 ## All nongenerated entities: SpatialEntity3D nodes and userplaced PhysicsBody3D nodes.

@@ -90,6 +90,7 @@ func _ready() -> void:
 		_btn("Add room to %s of current" % side, _add_neighbor.bind(side))
 		_btn("Punch doorway %s on current" % side, _punch.bind(side))
 	_btn("Punch door at cursor (on nearest wall)", _punch_at_cursor)
+	_btn("Punch hole at cursor (on nearest wall)", _punch_hole_at_cursor)
 
 	add_child(HSeparator.new())
 
@@ -599,6 +600,24 @@ func _punch_at_cursor() -> void:
 	_make_door_placeholder(room, side, local_u, local_v, door_w.value, door_h.value)
 	_refresh()
 	dock._say("Door punched on %s wall at offset %.1f, %.1f (%.1fm × %.1fm)." % \
+		[side, local_u, local_v, door_w.value, door_h.value])
+	_refresh_door_list()
+
+func _punch_hole_at_cursor() -> void:
+	if not dock.current_entity is Room3D: dock._say("No room selected."); return
+	var room := dock.current_entity as Room3D
+	var cur: Vector3 = dock.cursor
+	var side: String = _closest_wall(room, cur)
+	var local_v: float = cur.y - (room.position.y + room.size.y / 2.0)
+	var local_u: float
+	match side:
+		"north", "south":
+			local_u = cur.x - room.position.x
+		"east", "west":
+			local_u = room.position.z - cur.z
+	room.punch_hole(side, local_u, local_v, door_w.value, door_h.value)
+	_refresh()
+	dock._say("Hole punched on %s wall at offset %.1f, %.1f (%.1fm × %.1fm)." % \
 		[side, local_u, local_v, door_w.value, door_h.value])
 	_refresh_door_list()
 

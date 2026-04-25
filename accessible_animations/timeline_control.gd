@@ -366,6 +366,7 @@ func _open_value_editor(anim: Animation, track: int, key_idx: int, is_insert: bo
 			var cur := 0.0
 			if key_idx >= 0:
 				cur = anim.track_get_key_value(track, key_idx)
+			var cur_trans := anim.track_get_key_transition(track, key_idx) if key_idx >= 0 else 1.0
 			var row := HBoxContainer.new()
 			vb.add_child(row)
 			row.add_child(dock._lbl("Amount (0.0-1.0):"))
@@ -373,36 +374,41 @@ func _open_value_editor(anim: Animation, track: int, key_idx: int, is_insert: bo
 			field.text = str(cur)
 			dock._set_a11y(field, "Blend shape amount", "0.0 = no blend, 1.0 = full blend.")
 			row.add_child(field)
+			var trans_field := _transition_field(vb, cur_trans)
 			dock.add_child(dlg)
 			dlg.popup_centered()
 			field.grab_focus()
 			dlg.confirmed.connect(func() -> void:
 				var new_v := float(field.text)
 				dlg.queue_free()
-				_commit_insert(anim, track, new_v)
+				_commit_insert(anim, track, new_v, trans_field.value)
 			)
 
 		Animation.TYPE_POSITION_3D:
 			var cur := Vector3.ZERO
 			if key_idx >= 0:
 				cur = anim.track_get_key_value(track, key_idx)
+			var cur_trans := anim.track_get_key_transition(track, key_idx) if key_idx >= 0 else 1.0
 			var fields := _vec3_dialog(vb, cur, "X", "Y", "Z")
+			var trans_field := _transition_field(vb, cur_trans)
 			dock.add_child(dlg)
 			dlg.popup_centered()
 			dlg.confirmed.connect(func() -> void:
 				var v := fields.call()
 				dlg.queue_free()
-				_commit_insert(anim, track, v)
+				_commit_insert(anim, track, v, trans_field.value)
 			)
 
 		Animation.TYPE_ROTATION_3D:
 			var cur := Quaternion.IDENTITY
 			if key_idx >= 0:
 				cur = anim.track_get_key_value(track, key_idx)
+			var cur_trans := anim.track_get_key_transition(track, key_idx) if key_idx >= 0 else 1.0
 			var e := cur.get_euler()
 			var fields := _vec3_dialog(vb,
 				Vector3(rad_to_deg(e.x), rad_to_deg(e.y), rad_to_deg(e.z)),
 				"X°", "Y°", "Z°")
+			var trans_field := _transition_field(vb, cur_trans)
 			dock.add_child(dlg)
 			dlg.popup_centered()
 			dlg.confirmed.connect(func() -> void:
@@ -410,20 +416,23 @@ func _open_value_editor(anim: Animation, track: int, key_idx: int, is_insert: bo
 				dlg.queue_free()
 				_commit_insert(anim, track,
 					Quaternion.from_euler(Vector3(
-						deg_to_rad(ev.x), deg_to_rad(ev.y), deg_to_rad(ev.z))))
+						deg_to_rad(ev.x), deg_to_rad(ev.y), deg_to_rad(ev.z))),
+					trans_field.value)
 			)
 
 		Animation.TYPE_SCALE_3D:
 			var cur := Vector3.ONE
 			if key_idx >= 0:
 				cur = anim.track_get_key_value(track, key_idx)
+			var cur_trans := anim.track_get_key_transition(track, key_idx) if key_idx >= 0 else 1.0
 			var fields := _vec3_dialog(vb, cur, "X", "Y", "Z")
+			var trans_field := _transition_field(vb, cur_trans)
 			dock.add_child(dlg)
 			dlg.popup_centered()
 			dlg.confirmed.connect(func() -> void:
 				var v: Vector3 = fields.call()
 				dlg.queue_free()
-				_commit_insert(anim, track, v)
+				_commit_insert(anim, track, v, trans_field.value)
 			)
 
 		Animation.TYPE_METHOD:
@@ -511,6 +520,7 @@ func _build_value_track_editor(vb: VBoxContainer, dlg: AcceptDialog,
 		cur_val = anim.track_get_key_value(track, key_idx)
 	elif anim.track_get_key_count(track) > 0:
 		cur_val = anim.track_get_key_value(track, 0)
+	var cur_trans := anim.track_get_key_transition(track, key_idx) if key_idx >= 0 else 1.0
 
 	if cur_val is bool:
 		var opt := OptionButton.new()
@@ -518,28 +528,31 @@ func _build_value_track_editor(vb: VBoxContainer, dlg: AcceptDialog,
 		if bool(cur_val): opt.select(1)
 		dock._set_a11y(opt, "Boolean value")
 		vb.add_child(opt)
+		var trans_field := _transition_field(vb, cur_trans)
 		dock.add_child(dlg); dlg.popup_centered(); opt.grab_focus()
 		dlg.confirmed.connect(func() -> void:
 			dlg.queue_free()
-			_commit_value(anim, track, key_idx, bool(opt.selected), is_insert))
+			_commit_value(anim, track, key_idx, bool(opt.selected), is_insert, trans_field.value))
 		dlg.canceled.connect(func() -> void: dlg.queue_free())
 		return
 
 	if cur_val is Vector2:
 		var fields := _vec2_dialog(vb, cur_val)
+		var trans_field := _transition_field(vb, cur_trans)
 		dock.add_child(dlg); dlg.popup_centered()
 		dlg.confirmed.connect(func() -> void:
 			dlg.queue_free()
-			_commit_value(anim, track, key_idx, fields.call(), is_insert))
+			_commit_value(anim, track, key_idx, fields.call(), is_insert, trans_field.value))
 		dlg.canceled.connect(func() -> void: dlg.queue_free())
 		return
 
 	if cur_val is Vector3:
 		var fields := _vec3_dialog(vb, cur_val, "X", "Y", "Z")
+		var trans_field := _transition_field(vb, cur_trans)
 		dock.add_child(dlg); dlg.popup_centered()
 		dlg.confirmed.connect(func() -> void:
 			dlg.queue_free()
-			_commit_value(anim, track, key_idx, fields.call(), is_insert))
+			_commit_value(anim, track, key_idx, fields.call(), is_insert, trans_field.value))
 		dlg.canceled.connect(func() -> void: dlg.queue_free())
 		return
 
@@ -549,10 +562,11 @@ func _build_value_track_editor(vb: VBoxContainer, dlg: AcceptDialog,
 		var fg := _spin_field(vb, "G:", cv.g, 0.0, 1.0, 0.001)
 		var fb := _spin_field(vb, "B:", cv.b, 0.0, 1.0, 0.001)
 		var fa := _spin_field(vb, "A:", cv.a, 0.0, 1.0, 0.001)
+		var trans_field := _transition_field(vb, cur_trans)
 		dock.add_child(dlg); dlg.popup_centered()
 		dlg.confirmed.connect(func() -> void:
 			dlg.queue_free()
-			_commit_value(anim, track, key_idx, Color(fr.value, fg.value, fb.value, fa.value), is_insert))
+			_commit_value(anim, track, key_idx, Color(fr.value, fg.value, fb.value, fa.value), is_insert, trans_field.value))
 		dlg.canceled.connect(func() -> void: dlg.queue_free())
 		return
 
@@ -562,6 +576,7 @@ func _build_value_track_editor(vb: VBoxContainer, dlg: AcceptDialog,
 	field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	dock._set_a11y(field, "Value", "Enter the keyframe value.")
 	vb.add_child(field)
+	var trans_field := _transition_field(vb, cur_trans)
 	dock.add_child(dlg); dlg.popup_centered(); field.grab_focus()
 	dlg.confirmed.connect(func() -> void:
 		var raw := field.text.strip_edges()
@@ -573,21 +588,21 @@ func _build_value_track_editor(vb: VBoxContainer, dlg: AcceptDialog,
 			parsed = int(raw)
 		else:
 			parsed = raw
-		_commit_value(anim, track, key_idx, parsed, is_insert)
+		_commit_value(anim, track, key_idx, parsed, is_insert, trans_field.value)
 	)
 	dlg.canceled.connect(func() -> void: dlg.queue_free())
 
 
 # Commit helpers
 
-func _commit_insert(anim: Animation, track: int, value: Variant) -> void:
+func _commit_insert(anim: Animation, track: int, value: Variant, transition: float = 1.0) -> void:
 	if dock.editor_undo_redo != null:
 		dock.editor_undo_redo.create_action("Insert keyframe")
-		dock.editor_undo_redo.add_do_method(anim, &"track_insert_key", track, current_time, value)
+		dock.editor_undo_redo.add_do_method(anim, &"track_insert_key", track, current_time, value, transition)
 		dock.editor_undo_redo.add_undo_method(anim, &"track_remove_key_at_time", track, current_time)
 		dock.editor_undo_redo.commit_action()
 	else:
-		anim.track_insert_key(track, current_time, value)
+		anim.track_insert_key(track, current_time, value, transition)
 	queue_redraw()
 	dock._refresh_tracks()
 	dock._update_info_label()
@@ -595,18 +610,22 @@ func _commit_insert(anim: Animation, track: int, value: Variant) -> void:
 
 
 func _commit_value(anim: Animation, track: int, key_idx: int,
-		value: Variant, is_insert: bool) -> void:
+		value: Variant, is_insert: bool, transition: float = 1.0) -> void:
 	if is_insert:
-		_commit_insert(anim, track, value)
+		_commit_insert(anim, track, value, transition)
 		return
 	var old_v: Variant = anim.track_get_key_value(track, key_idx)
+	var old_t := anim.track_get_key_transition(track, key_idx)
 	if dock.editor_undo_redo != null:
 		dock.editor_undo_redo.create_action("Set keyframe value")
 		dock.editor_undo_redo.add_do_method(anim, &"track_set_key_value", track, key_idx, value)
+		dock.editor_undo_redo.add_do_method(anim, &"track_set_key_transition", track, key_idx, transition)
 		dock.editor_undo_redo.add_undo_method(anim, &"track_set_key_value", track, key_idx, old_v)
+		dock.editor_undo_redo.add_undo_method(anim, &"track_set_key_transition", track, key_idx, old_t)
 		dock.editor_undo_redo.commit_action()
 	else:
 		anim.track_set_key_value(track, key_idx, value)
+		anim.track_set_key_transition(track, key_idx, transition)
 	queue_redraw()
 	dock._update_info_label()
 	dock._say("Value set to: %s" % str(value))
@@ -656,6 +675,10 @@ func _spin_field(parent: Control, label_text: String,
 	dock._set_a11y(sp, label_text.rstrip(":"))
 	row.add_child(sp)
 	return sp
+
+
+func _transition_field(vb: VBoxContainer, cur_trans: float) -> SpinBox:
+	return _spin_field(vb, "Transition:", cur_trans, -16.0, 16.0, 0.01)
 
 
 # Helper: read key value for any track type

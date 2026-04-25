@@ -286,6 +286,10 @@ func punch_doorway(side: String, width := 1.2, height := 2.1) -> void:
 	## Appends a centred floorlevel doorway without removing existing ones.
 	add_doorway(side, 0.0, -size.y / 2.0 + height / 2.0, width, height)
 
+func punch_hole(side: String, center_u: float, center_v: float, width := 0.9, height := 0.9) -> void:
+	## Appends a hole centred at (center_u, center_v) in wall-local metres. Suitable for windows.
+	add_doorway(side, center_u, center_v, width, height)
+
 func add_doorway(side: String, center_u: float, center_v: float, width := 1.2, height := 2.1, label := "") -> void:
 	## Appends a doorway at a walllocal position. center_u/v in metres, origin = wall centre.
 	var d := DoorEntry.new()

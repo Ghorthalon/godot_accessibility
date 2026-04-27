@@ -389,16 +389,17 @@ func _bake_scene() -> void:
 			if not child.has_meta("generated"):
 				entity.remove_child(child)
 				wrapper.add_child(child)
-				child.owner = root
-				for gc in child.get_children():
-					gc.owner = root
+				_set_owners_recursive(child, root)
 
 		# Merge visual neshes, one ArrayMesh per surface type.
 		for surf in by_surface:
 			var st := SurfaceTool.new()
 			st.begin(Mesh.PRIMITIVE_TRIANGLES)
 			for body in by_surface[surf]:
-				var mi: MeshInstance3D = body.get_child(0)
+				var mi: MeshInstance3D
+				for ch in body.get_children():
+					if ch is MeshInstance3D: mi = ch; break
+				if mi == null: continue
 				st.append_from(mi.mesh, 0, body.transform)
 			var merged_mi := MeshInstance3D.new()
 			merged_mi.name = original_name + "_" + surf + "_mesh"
@@ -410,7 +411,10 @@ func _bake_scene() -> void:
 		var all_tris := PackedVector3Array()
 		for surf in by_surface:
 			for body in by_surface[surf]:
-				var mi: MeshInstance3D = body.get_child(0)
+				var mi: MeshInstance3D
+				for ch in body.get_children():
+					if ch is MeshInstance3D: mi = ch; break
+				if mi == null: continue
 				var arrays: Array = mi.mesh.surface_get_arrays(0)
 				var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 				var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
@@ -491,9 +495,7 @@ func _bake_to_file(target_path: String) -> void:
 			if not child.has_meta("generated"):
 				entity.remove_child(child)
 				wrapper.add_child(child)
-				child.owner = dup_root
-				for gc in child.get_children():
-					gc.owner = dup_root
+				_set_owners_recursive(child, dup_root)
 
 		for surf in by_surface:
 			var st := SurfaceTool.new()
@@ -685,6 +687,7 @@ func _on_door_select(i: int) -> void:
 	if not dock.current_entity is Room3D: return
 	var room := dock.current_entity as Room3D
 	_current_door_idx = _door_item_list.get_item_metadata(i)
+	if _current_door_idx < 0 or _current_door_idx >= room.door_list.size(): return
 	var d: DoorEntry = room.door_list[_current_door_idx]
 	for c in _door_props_container.get_children(): c.queue_free()
 	await get_tree().process_frame

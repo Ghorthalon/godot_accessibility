@@ -11,7 +11,10 @@ var current_entity: SpatialEntity3D
 var scene_query: SceneQuery
 
 var use_selected_node: bool = false
+var follow_selection: bool = false
 var last_placed_node: Node3D
+
+signal cursor_jumped
 
 var tab_rooms  # set in _ready exposes room actions to other tabs
 var tab_place  # set in _ready exposes place actions to other tabs
@@ -38,6 +41,15 @@ func _ready() -> void:
 		_say("Parent: %s." % ("selected node" if on else "scene root"))
 	)
 	add_child(toggle)
+
+	var follow_toggle := CheckButton.new()
+	follow_toggle.text = "Move cursor to selected object"
+	follow_toggle.tooltip_text = "When on, the cursor jumps to any node you select in the viewport or scene tree."
+	follow_toggle.toggled.connect(func(on: bool) -> void:
+		follow_selection = on
+		_say("Follow selection: %s." % ("on" if on else "off"))
+	)
+	add_child(follow_toggle)
 
 	var tabs := TabContainer.new()
 	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -74,13 +86,17 @@ func _ready() -> void:
 	tabs.add_child(tab_scene)
 
 func get_target_node() -> Node3D:
-	if last_placed_node != null and is_instance_valid(last_placed_node):
-		return last_placed_node
 	var sel: Array = plugin.get_editor_interface().get_selection().get_selected_nodes()
 	for n in sel:
 		if n is Node3D: return n as Node3D
+	if last_placed_node != null and is_instance_valid(last_placed_node):
+		return last_placed_node
 	_say("No node selected. Insert a node or select one first.")
 	return null
+
+func move_cursor_to(pos: Vector3) -> void:
+	cursor = pos
+	cursor_jumped.emit()
 
 func _say(msg: String) -> void:
 	announce.text = msg

@@ -67,6 +67,7 @@ func _ready() -> void:
 	nav_control.zone_corner_a.connect(func(): dock.tab_place._set_zone_corner_a())
 	nav_control.zone_corner_b.connect(func(): dock.tab_place._set_zone_corner_b())
 	nav_control.add_zone_to_floor.connect(func(): dock.tab_place._add_floor_zone())
+	dock.cursor_jumped.connect(_report_cursor)
 
 	add_child(HSeparator.new())
 	_audio_preview_enabled = CheckBox.new()

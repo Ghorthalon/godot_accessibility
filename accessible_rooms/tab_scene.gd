@@ -21,6 +21,7 @@ func _ready() -> void:
 	_node_list.custom_minimum_size = Vector2(0, 300)
 	_node_list.item_selected.connect(_on_select)
 	add_child(_node_list)
+	dock.plugin.get_editor_interface().get_selection().selection_changed.connect(_on_editor_selection_changed)
 
 func _refresh() -> void:
 	_node_list.clear()
@@ -79,3 +80,16 @@ func _on_select(index: int) -> void:
 	sel.clear()
 	sel.add_node(node)
 	dock._say("Selected %s." % node.name)
+
+func _on_editor_selection_changed() -> void:
+	if not dock.follow_selection: return
+	var sel: Array = dock.plugin.get_editor_interface().get_selection().get_selected_nodes()
+	for node in sel:
+		if node is Node3D:
+			dock.move_cursor_to((node as Node3D).global_position)
+			return
+
+func _exit_tree() -> void:
+	var sel: EditorSelection = dock.plugin.get_editor_interface().get_selection()
+	if sel.selection_changed.is_connected(_on_editor_selection_changed):
+		sel.selection_changed.disconnect(_on_editor_selection_changed)

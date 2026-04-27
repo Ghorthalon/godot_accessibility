@@ -26,7 +26,7 @@ func placement_parent() -> Node:
 ## All nongenerated entities: SpatialEntity3D nodes and userplaced PhysicsBody3D nodes.
 ## Stops recursing into an entity once found, avoiding generated wall/surface children.
 func entities_in_scene() -> Array[Node]:
-	var root := placement_parent()
+	var root := edited_root()
 	if root == null: return []
 	var result: Array[Node] = []
 	_collect(root, result)
@@ -56,16 +56,20 @@ func entity_label(entity: Node) -> String:
 ## Replaces the former specific room_containing() / ramp_containing() pair
 ## works for any current or future SpatialEntity3D subclass automatically. Hopefully. Maybe. Until it doesn't.
 func entity_containing(p: Vector3) -> SpatialEntity3D:
-	var root := placement_parent()
+	var root := edited_root()
 	if root == null: return null
-	for c in root.get_children():
-		if c is SpatialEntity3D and (c as SpatialEntity3D).contains_point(p):
-			return c as SpatialEntity3D
-	return null
+	return _entity_containing_recursive(root, p)
 
-# Don't use this anymore. I have to remove this.
-func room_containing(p: Vector3) -> Room3D:
-	return entity_containing(p) as Room3D
+func _entity_containing_recursive(node: Node, p: Vector3) -> SpatialEntity3D:
+	if node.has_meta("generated"): return null
+	if node is SpatialEntity3D:
+		if (node as SpatialEntity3D).contains_point(p):
+			return node as SpatialEntity3D
+		return null
+	for child in node.get_children():
+		var found := _entity_containing_recursive(child, p)
+		if found != null: return found
+	return null
 
 # Returns readable labels for all physics shapes that contain point p.
 # Uses Jolt broadphase and should be safe to call on every cursor move even in large scenes.
@@ -233,7 +237,7 @@ func wall_gap(from: Vector3, dir: Vector3, max_dist := 30.0) -> Dictionary:
 ## Returns {side, world_pos, width, height} for the nearest doorway opening to near_pos, or {}.
 ## Searches all walls of the room containing near_pos.
 func nearest_doorway(near_pos: Vector3) -> Dictionary:
-	var room := room_containing(near_pos)
+	var room := entity_containing(near_pos) as Room3D
 	if room == null: return {}
 	var best := {}
 	var best_dist := INF
@@ -270,8 +274,8 @@ func _doorway_world_pos(room: Room3D, side: String, cu: float, cv: float) -> Vec
 	match side:
 		"north": wall_center = Vector3(0, room.size.y / 2.0, -room.size.z / 2.0); bu = Vector3.RIGHT
 		"south": wall_center = Vector3(0, room.size.y / 2.0,  room.size.z / 2.0); bu = Vector3.RIGHT
-		"east":  wall_center = Vector3( room.size.x / 2.0, room.size.y / 2.0, 0); bu = Vector3.BACK
-		"west":  wall_center = Vector3(-room.size.x / 2.0, room.size.y / 2.0, 0); bu = Vector3.BACK
+		"east":  wall_center = Vector3( room.size.x / 2.0, room.size.y / 2.0, 0); bu = Vector3.FORWARD
+		"west":  wall_center = Vector3(-room.size.x / 2.0, room.size.y / 2.0, 0); bu = Vector3.FORWARD
 	return room.position + wall_center + bu * cu + Vector3.UP * cv
 
 ## Walks node and its descendants to find the first CollisionShape3D.

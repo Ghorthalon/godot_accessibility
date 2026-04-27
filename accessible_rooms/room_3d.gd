@@ -21,6 +21,7 @@ const NORMALS := {
 @export var door_list: Array[DoorEntry] = []
 
 var _rebuild_queued := false
+var _rebuild_gen := 0
 
 func _set_size(v):  size = v;                                   _queue_rebuild()
 func _set_n(v):    _rewire(wall_north,   v); wall_north = v;   _queue_rebuild()
@@ -75,6 +76,7 @@ func cfg(side: String) -> WallConfig:
 func _queue_rebuild() -> void:
 	if is_inside_tree() and not _rebuild_queued:
 		_rebuild_queued = true
+		_rebuild_gen += 1
 		call_deferred("rebuild")
 
 func _sync_doors_to_openings() -> void:
@@ -86,12 +88,14 @@ func _sync_doors_to_openings() -> void:
 
 func rebuild() -> void:
 	_rebuild_queued = false
+	var my_gen := _rebuild_gen
 	_sync_doors_to_openings()
 	if not Engine.is_editor_hint(): return
 	for c in get_children():
 		if c.has_meta("generated") or c.has_meta("room_area"): c.queue_free()
 	if not is_inside_tree(): return
 	await get_tree().process_frame
+	if _rebuild_gen != my_gen: return
 	for side in SIDES:
 		var wall_cfg := cfg(side)
 		if wall_cfg == null or not wall_cfg.enabled: continue
@@ -144,10 +148,14 @@ static func _wall_plane_coord(room: Room3D, side: String) -> float:
 	return 0.0
 
 func _compute_wall_local_overlap(side: String, other: Room3D) -> Rect2:
-	var y_hi := minf(size.y, other.size.y)
-	if y_hi <= 0.001: return Rect2()
-	var v_lo := -size.y / 2.0
-	var v_hi := y_hi - size.y / 2.0
+	# Actual Y overlap in world space (rooms may have different floor heights).
+	var world_y_lo := maxf(position.y, other.position.y)
+	var world_y_hi := minf(position.y + size.y, other.position.y + other.size.y)
+	if world_y_hi - world_y_lo <= 0.001: return Rect2()
+	# Convert to wall-local v (basis_v = UP, wall centre is at position.y + size.y/2).
+	var wall_centre_y := position.y + size.y / 2.0
+	var v_lo := world_y_lo - wall_centre_y
+	var v_hi := world_y_hi - wall_centre_y
 	match side:
 		"north", "south":
 			var x_lo := maxf(position.x - size.x/2.0, other.position.x - other.size.x/2.0)

@@ -161,32 +161,28 @@ func _set_zone_corner_b() -> void:
 	dock._say("Zone corner B set at %.1f, %.1f." % [dock.cursor.x, dock.cursor.z])
 
 func _add_floor_zone() -> void:
-	if dock.current_entity == null: dock._say("No current room selected."); return
-	var ax: float = zone_corner_a.x - (dock.current_entity as Room3D).position.x
-	var az: float = zone_corner_a.z - (dock.current_entity as Room3D).position.z
-	var bx: float = zone_corner_b.x - (dock.current_entity as Room3D).position.x
-	var bz: float = zone_corner_b.z - (dock.current_entity as Room3D).position.z
+	if not dock.current_entity is Room3D: dock._say("No room selected."); return
+	var room := dock.current_entity as Room3D
+	var ax: float = zone_corner_a.x - room.position.x
+	var az: float = zone_corner_a.z - room.position.z
+	var bx: float = zone_corner_b.x - room.position.x
+	var bz: float = zone_corner_b.z - room.position.z
 	var rect := Rect2(minf(ax, bx), minf(az, bz), absf(bx - ax), absf(bz - az))
 	if rect.size.x < 0.01 or rect.size.y < 0.01:
 		dock._say("Zone too small, move cursor between corners first."); return
 	var surface := zone_surface_edit.text.strip_edges()
 	if surface.is_empty(): dock._say("Enter a surface name first."); return
-	var floor_cfg: Dictionary = dock.current_entity.walls["floor"]
-	if not floor_cfg.has("zones"):
-		floor_cfg["zones"] = []
-	floor_cfg["zones"].append({"rect": rect, "surface": surface})
-	dock.current_entity.walls["floor"] = floor_cfg
-	dock.current_entity.rebuild()
+	room.cfg("floor").zones.append({"rect": rect, "surface": surface})
+	room._queue_rebuild()
 	dock._say("Added %s zone (%.1f x %.1f m) to floor of %s." % \
-		[surface, rect.size.x, rect.size.y, dock.current_entity.name])
+		[surface, rect.size.x, rect.size.y, room.name])
 
 func _clear_floor_zones() -> void:
-	if dock.current_entity == null: dock._say("No current room selected."); return
-	var floor_cfg: Dictionary = dock.current_entity.walls["floor"]
-	floor_cfg["zones"] = []
-	dock.current_entity.walls["floor"] = floor_cfg
-	dock.current_entity.rebuild()
-	dock._say("Cleared all floor zones from %s." % dock.current_entity.name)
+	if not dock.current_entity is Room3D: dock._say("No room selected."); return
+	var room := dock.current_entity as Room3D
+	room.cfg("floor").zones.clear()
+	room._queue_rebuild()
+	dock._say("Cleared all floor zones from %s." % room.name)
 
 # --- Snap helpers ---
 

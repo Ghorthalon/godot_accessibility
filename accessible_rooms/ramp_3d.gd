@@ -28,6 +28,7 @@ extends SpatialEntity3D
 @export var rebuild_now: bool = false: set = _trigger
 
 var _rebuild_queued := false
+var _rebuild_gen := 0
 
 func _set_width(v):  width = v;          _queue_rebuild()
 func _set_length(v): length = v;         _queue_rebuild()
@@ -44,14 +45,17 @@ func _trigger(_v):   rebuild()
 func _queue_rebuild() -> void:
 	if is_inside_tree() and not _rebuild_queued:
 		_rebuild_queued = true
+		_rebuild_gen += 1
 		call_deferred("rebuild")
 
 func rebuild() -> void:
 	_rebuild_queued = false
+	var my_gen := _rebuild_gen
 	if not Engine.is_editor_hint(): return
 	for c in get_children():
 		if c.has_meta("generated") or c.has_meta("ramp_area"): c.queue_free()
 	await get_tree().process_frame
+	if _rebuild_gen != my_gen: return
 	_build_ramp()
 	_build_ramp_area()
 

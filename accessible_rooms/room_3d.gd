@@ -133,7 +133,7 @@ func _build_wall(side: String) -> void:
 		_spawn_quad(side, wall_cfg.surface, center, basis_u, basis_v, rects[i], i)
 
 	# Zone overlays: offset slightly along the wall normal to prevent z-fighting.
-	var zone_off: Vector3 = NORMALS[side] * 0.001
+	var zone_off: Vector3 = NORMALS[side] * EPSILON
 	for i in wall_cfg.zones.size():
 		var zone: Dictionary = wall_cfg.zones[i]
 		_spawn_quad(side, zone.get("surface", "concrete"),
@@ -151,7 +151,7 @@ func _compute_wall_local_overlap(side: String, other: Room3D) -> Rect2:
 	# Actual Y overlap in world space (rooms may have different floor heights).
 	var world_y_lo := maxf(position.y, other.position.y)
 	var world_y_hi := minf(position.y + size.y, other.position.y + other.size.y)
-	if world_y_hi - world_y_lo <= 0.001: return Rect2()
+	if world_y_hi - world_y_lo <= EPSILON: return Rect2()
 	# Convert to wall-local v (basis_v = UP, wall centre is at position.y + size.y/2).
 	var wall_centre_y := position.y + size.y / 2.0
 	var v_lo := world_y_lo - wall_centre_y
@@ -160,12 +160,12 @@ func _compute_wall_local_overlap(side: String, other: Room3D) -> Rect2:
 		"north", "south":
 			var x_lo := maxf(position.x - size.x/2.0, other.position.x - other.size.x/2.0)
 			var x_hi := minf(position.x + size.x/2.0, other.position.x + other.size.x/2.0)
-			if x_hi - x_lo <= 0.001: return Rect2()
+			if x_hi - x_lo <= EPSILON: return Rect2()
 			return Rect2(x_lo - position.x, v_lo, x_hi - x_lo, v_hi - v_lo)
 		"east", "west":
 			var z_lo := maxf(position.z - size.z/2.0, other.position.z - other.size.z/2.0)
 			var z_hi := minf(position.z + size.z/2.0, other.position.z + other.size.z/2.0)
-			if z_hi - z_lo <= 0.001: return Rect2()
+			if z_hi - z_lo <= EPSILON: return Rect2()
 			# basis_u = FORWARD = -Z, so u = position.z - world_z (reversed)
 			return Rect2(position.z - z_hi, v_lo, z_hi - z_lo, v_hi - v_lo)
 	return Rect2()
@@ -175,7 +175,6 @@ func _get_overlap_suppressions(side: String) -> Array[Rect2]:
 	var opp := neighbor_doorway_side(side)
 	if opp.is_empty(): return []
 	var result: Array[Rect2] = []
-	const EPSILON := 0.001
 	for node in get_tree().get_nodes_in_group("accessible_rooms_rooms"):
 		if node == self or not node is Room3D: continue
 		var other := node as Room3D
@@ -203,7 +202,7 @@ func _slice(rects: Array, openings: Array) -> Array:
 			var top_y: float = hole.position.y + hole.size.y
 			var top := Rect2(mid_x, top_y, mid_w, r.end.y - top_y)
 			for piece in [left, right, bottom, top]:
-				if piece.size.x > 0.001 and piece.size.y > 0.001:
+				if piece.size.x > EPSILON and piece.size.y > EPSILON:
 					out.append(piece)
 		rects = out
 	return rects
@@ -213,7 +212,7 @@ func _spawn_quad(side: String, surface: String, center: Vector3, bu: Vector3, bv
 	body.set_meta("generated", true)
 	body.set_meta("surface", surface)
 	body.name = "%s_%d" % [side, idx]
-	var thickness := 0.1
+	var thickness := WALL_THICKNESS
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = Vector3(r.size.x, r.size.y, thickness)

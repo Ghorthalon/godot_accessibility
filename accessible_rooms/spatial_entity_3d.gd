@@ -18,6 +18,9 @@
 class_name SpatialEntity3D
 extends Node3D
 
+const EPSILON := 0.001       # geometric tolerance: overlap/adjacency checks, z-fighting offset
+const WALL_THICKNESS := 0.1  # generated collision-body depth for walls, floors, ceilings, ramps
+
 # ---------------------------------------------------------------------------
 # Virtual interface, override in subclasses
 # ---------------------------------------------------------------------------

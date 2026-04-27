@@ -852,7 +852,7 @@ func _collect_cascade(room: Room3D, old_pos: Vector3, old_size: Vector3,
 		var side: String = sd[0]
 		var delta: float = sd[1]
 		var axis: Vector3 = sd[2]
-		if delta < 0.001: continue  # only push outward, not pull inward
+		if delta < Room3D.EPSILON: continue  # only push outward, not pull inward
 		for neighbor: Room3D in dock.scene_query.rooms_flush_with_wall(room, side, root):
 			if neighbor in visited: continue
 			var n_new_pos := neighbor.position + axis * delta
@@ -888,7 +888,7 @@ func _adjust_doors_for_resize(room: Room3D, new_pos: Vector3, new_size: Vector3)
 	var dx := new_pos.x - room.position.x
 	var dz := new_pos.z - room.position.z
 	var dy := new_size.y - room.size.y
-	if absf(dx) < 0.001 and absf(dz) < 0.001 and absf(dy) < 0.001: return
+	if absf(dx) < Room3D.EPSILON and absf(dz) < Room3D.EPSILON and absf(dy) < Room3D.EPSILON: return
 	for door in room.door_list:
 		match door.side:
 			"north", "south":

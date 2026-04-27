@@ -175,14 +175,13 @@ func first_overlap(pos: Vector3, footprint: Vector3, root: Node, exclude: Node =
 ## Returns all Room3D nodes in root whose opposite wall is flush with room's side wall
 ## and whose footprint overlaps on the perpendicular axis.
 func rooms_flush_with_wall(room: Room3D, side: String, root: Node) -> Array[Room3D]:
-	const EPSILON := 0.001
 	var opp := _opposite_side(side)
 	var plane := Room3D._wall_plane_coord(room, side)
 	var result: Array[Room3D] = []
 	for child in root.get_children():
 		if child == room or not child is Room3D: continue
 		var other := child as Room3D
-		if absf(Room3D._wall_plane_coord(other, opp) - plane) > EPSILON: continue
+		if absf(Room3D._wall_plane_coord(other, opp) - plane) > SpatialEntity3D.EPSILON: continue
 		if not _rooms_share_wall_footprint(room, side, other): continue
 		result.append(other)
 	return result
@@ -202,13 +201,13 @@ func _rooms_share_wall_footprint(a: Room3D, side: String, b: Room3D) -> bool:
 			var a_hi := a.position.x + a.size.x / 2.0
 			var b_lo := b.position.x - b.size.x / 2.0
 			var b_hi := b.position.x + b.size.x / 2.0
-			return a_hi > b_lo + 0.001 and b_hi > a_lo + 0.001
+			return a_hi > b_lo + SpatialEntity3D.EPSILON and b_hi > a_lo + SpatialEntity3D.EPSILON
 		"east", "west":
 			var a_lo := a.position.z - a.size.z / 2.0
 			var a_hi := a.position.z + a.size.z / 2.0
 			var b_lo := b.position.z - b.size.z / 2.0
 			var b_hi := b.position.z + b.size.z / 2.0
-			return a_hi > b_lo + 0.001 and b_hi > a_lo + 0.001
+			return a_hi > b_lo + SpatialEntity3D.EPSILON and b_hi > a_lo + SpatialEntity3D.EPSILON
 	return false
 
 ## Returns the axis aligned bounding footprint of a SpatialEntity3D.

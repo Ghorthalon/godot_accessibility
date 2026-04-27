@@ -121,7 +121,7 @@ func _spawn_panel(side: String, surface: String,
 	body.set_meta("surface", surface)
 	body.name = "%s_%d" % [side, idx]
 
-	const thickness := 0.1
+	var thickness := WALL_THICKNESS
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = Vector3(r.size.x, r.size.y, thickness)

@@ -118,7 +118,7 @@ func _check_cursor() -> void:
 	if result["collider_name"] == "no shape":
 		dock._say("No collision shape on %s, cannot check." % n.name)
 	elif result["collides"]:
-		dock._say("Cursor position is blocked by %s." % result["collider_name"])
+		dock._say("Placing %s at cursor would be blocked by %s." % [n.name, result["collider_name"]])
 	else:
 		dock._say("Cursor position is clear.")
 
@@ -169,7 +169,11 @@ func _snap_to_floor() -> void:
 	if n == null: return
 	var floor_y = dock.scene_query.raycast_down(n.global_position)
 	if floor_y == null: dock._say("No floor found below %s." % n.name); return
-	n.global_position.y = floor_y + _floor_offset.value
+	var shape_node: CollisionShape3D = dock.scene_query.find_collision_shape(n)
+	var origin_above_bottom := 0.0
+	if shape_node != null and shape_node.shape is BoxShape3D:
+		origin_above_bottom = (shape_node.shape as BoxShape3D).size.y / 2.0 - shape_node.position.y
+	n.global_position.y = floor_y + origin_above_bottom + _floor_offset.value
 	dock._say("Snapped %s to floor (y=%.2f)." % [n.name, n.global_position.y])
 
 func _snap_to_nearest_wall() -> void:
@@ -189,7 +193,13 @@ func _snap_to_nearest_wall() -> void:
 			best_dist = d; best_hit = hit; best_dir = dirs[side]; best_side = side
 	if best_side == "":
 		dock._say("No wall found in any direction."); return
-	n.global_position = best_hit - best_dir * _wall_offset.value
+	var shape_node: CollisionShape3D = dock.scene_query.find_collision_shape(n)
+	var origin_to_face := 0.0
+	if shape_node != null and shape_node.shape is BoxShape3D:
+		var sz: Vector3 = (shape_node.shape as BoxShape3D).size
+		var abs_dir := Vector3(absf(best_dir.x), absf(best_dir.y), absf(best_dir.z))
+		origin_to_face = sz.dot(abs_dir) / 2.0 + shape_node.position.dot(best_dir)
+	n.global_position = best_hit - best_dir * (origin_to_face + _wall_offset.value)
 	dock._say("Snapped %s to %s wall (%.1fm away)." % [n.name, best_side, best_dist])
 
 func _center_east_west() -> void:

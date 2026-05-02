@@ -260,6 +260,9 @@ func contains_point(p: Vector3) -> bool:
 	var lp := p - position
 	return absf(lp.x) <= size.x / 2.0 and lp.y >= 0 and lp.y <= size.y and absf(lp.z) <= size.z / 2.0
 
+func bounding_volume() -> float:
+	return size.x * size.y * size.z
+
 func populate_properties_ui(c: VBoxContainer) -> void:
 	_add_spinbox(c, "W:", 1.0, 200.0, 1.0, size.x)
 	_add_spinbox(c, "H:", 1.0, 100.0, 0.5, size.y)

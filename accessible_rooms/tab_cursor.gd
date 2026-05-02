@@ -133,17 +133,24 @@ func _report_cursor() -> void:
 	else:
 		parts.append("inside: " + ", ".join(overlapping))
 
-	var container: SpatialEntity3D = dock.scene_query.entity_containing(dock.cursor)
+	var containers: Array[SpatialEntity3D] = dock.scene_query.entities_containing_sorted(dock.cursor)
+	var container: SpatialEntity3D = containers[0] if not containers.is_empty() else null
 	parts.append("in " + dock.scene_query.entity_label(container) if container else "outside any room")
 
 	var msg := "Cursor %.1f %.1f %.1f. %s." % [dock.cursor.x, dock.cursor.y, dock.cursor.z, ". ".join(parts)]
 	cursor_label.text = msg
 	dock._say(msg)
+	var audio_node: Node3D = dock.scene_query.innermost_container_node(dock.cursor)
+	if audio_node != null:
+		dock.play_audio_3d("inside", audio_node.global_position)
 	if dock.audio_debugger and _audio_preview_enabled and _audio_preview_enabled.button_pressed:
 		dock.audio_debugger.send_cursor(dock.cursor)
 
 func _probe() -> void:
 	dock._say(dock.scene_query.probe_report(dock.cursor))
+	var positions: Array[Vector3] = dock.scene_query.probe_positions(dock.cursor)
+	if not positions.is_empty():
+		dock.play_audio_staggered("distance", positions)
 
 # --- Jump to entity ---
 

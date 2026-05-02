@@ -108,6 +108,9 @@ func _measure_distances() -> void:
 	var n: Node3D = dock.get_target_node()
 	if n == null: return
 	dock._say("%s: %s" % [n.name, dock.scene_query.probe_report(n.global_position)])
+	var positions: Array[Vector3] = dock.scene_query.probe_positions(n.global_position)
+	if not positions.is_empty():
+		dock.play_audio_staggered("distance", positions)
 
 # --- Move to cursor ---
 
@@ -128,12 +131,12 @@ func _move_to_cursor() -> void:
 	var result: Dictionary = dock.scene_query.check_placement(n, dock.cursor)
 	if result["collider_name"] == "no shape":
 		n.global_position = dock.cursor
-		dock._say("Moved %s to cursor (no collision shape to check)." % n.name)
+		dock._say_ok("Moved %s to cursor (no collision shape to check)." % n.name)
 	elif result["collides"]:
-		dock._say("Cannot move %s, blocked by %s." % [n.name, result["collider_name"]])
+		dock._say_err("Cannot move %s, blocked by %s." % [n.name, result["collider_name"]])
 	else:
 		n.global_position = dock.cursor
-		dock._say("Moved %s to cursor at %.2f, %.2f, %.2f." % [n.name, dock.cursor.x, dock.cursor.y, dock.cursor.z])
+		dock._say_ok("Moved %s to cursor at %.2f, %.2f, %.2f." % [n.name, dock.cursor.x, dock.cursor.y, dock.cursor.z])
 
 # --- Nudge ---
 
@@ -146,12 +149,12 @@ func _nudge(dir: Vector3) -> void:
 	var dir_name := _dir_name(dir)
 	if result["collider_name"] == "no shape":
 		n.global_position = target
-		dock._say("Nudged %s %s %.2fm (no collision shape to check)." % [n.name, dir_name, amount])
+		dock._say_ok("Nudged %s %s %.2fm (no collision shape to check)." % [n.name, dir_name, amount])
 	elif result["collides"]:
-		dock._say("Cannot nudge %s %s, blocked by %s." % [n.name, dir_name, result["collider_name"]])
+		dock._say_err("Cannot nudge %s %s, blocked by %s." % [n.name, dir_name, result["collider_name"]])
 	else:
 		n.global_position = target
-		dock._say("Nudged %s %s %.2fm." % [n.name, dir_name, amount])
+		dock._say_ok("Nudged %s %s %.2fm." % [n.name, dir_name, amount])
 
 func _dir_name(dir: Vector3) -> String:
 	if dir == Vector3.FORWARD: return "north"

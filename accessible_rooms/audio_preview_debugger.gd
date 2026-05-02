@@ -40,3 +40,29 @@ func send_release() -> void:
 	if not _active_session.is_active():
 		return
 	_active_session.send_message("audio_preview:release", [])
+
+func send_play_3d(snd_name: String, listener_pos: Vector3, source_pos: Vector3) -> void:
+	if not has_active_session(): return
+	_active_session.send_message("audio_preview:play_3d", [
+		snd_name,
+		listener_pos.x, listener_pos.y, listener_pos.z,
+		source_pos.x,   source_pos.y,   source_pos.z
+	])
+
+func send_play_2d(snd_name: String) -> void:
+	if not has_active_session(): return
+	_active_session.send_message("audio_preview:play_2d", [snd_name])
+
+func send_play_staggered(snd_name: String, listener_pos: Vector3, positions: Array) -> void:
+	if not has_active_session(): return
+	var data: Array = [
+		snd_name,
+		listener_pos.x, listener_pos.y, listener_pos.z,
+		positions.size()
+	]
+	for pos in positions:
+		var v := pos as Vector3
+		data.append(v.x)
+		data.append(v.y)
+		data.append(v.z)
+	_active_session.send_message("audio_preview:play_staggered", data)

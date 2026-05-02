@@ -71,6 +71,79 @@ func _entity_containing_recursive(node: Node, p: Vector3) -> SpatialEntity3D:
 		if found != null: return found
 	return null
 
+## Returns all SpatialEntity3D instances that contain p, sorted smallest volume first.
+## Use this instead of entity_containing() when you want the most specific container.
+func entities_containing_sorted(p: Vector3) -> Array[SpatialEntity3D]:
+	var root := edited_root()
+	if root == null: return []
+	var found: Array[SpatialEntity3D] = []
+	_collect_containing(root, p, found)
+	found.sort_custom(func(a: SpatialEntity3D, b: SpatialEntity3D) -> bool:
+		return a.bounding_volume() < b.bounding_volume()
+	)
+	return found
+
+func _collect_containing(node: Node, p: Vector3, out: Array[SpatialEntity3D]) -> void:
+	if node.has_meta("generated"): return
+	if node is SpatialEntity3D:
+		if (node as SpatialEntity3D).contains_point(p):
+			out.append(node as SpatialEntity3D)
+	for child in node.get_children():
+		_collect_containing(child, p, out)
+
+## Returns the innermost Node3D whose center should be used for the inside.wav sound.
+## Combines SpatialEntity3D geometric containment with physics-based solid object containment,
+## returning whichever container has the smallest volume.
+func innermost_container_node(p: Vector3) -> Node3D:
+	var entities := entities_containing_sorted(p)
+	var solid   := _innermost_solid_container(p)
+	if entities.is_empty() and solid == null: return null
+	if solid == null:    return entities[0] as Node3D
+	if entities.is_empty(): return solid
+	var entity_vol := (entities[0] as SpatialEntity3D).bounding_volume()
+	var solid_vol  := _physics_body_volume(solid)
+	return solid if solid_vol < entity_vol else entities[0] as Node3D
+
+## Returns the smallest solid non-entity physics body that contains p, or null.
+## Excludes generated room/ramp bodies and SpatialEntity3D nodes themselves.
+func _innermost_solid_container(p: Vector3) -> Node3D:
+	var root := edited_root()
+	if root == null or not root is Node3D: return null
+	var space := (root as Node3D).get_world_3d().direct_space_state
+	var params := PhysicsPointQueryParameters3D.new()
+	params.position = p
+	var hits := space.intersect_point(params)
+	var best: Node3D = null
+	var best_vol := INF
+	for hit in hits:
+		var collider: Node = hit.get("collider")
+		if collider == null or not collider is Node3D: continue
+		if collider.has_meta("generated"): continue   # room/ramp wall/floor
+		if collider is SpatialEntity3D: continue       # handled geometrically
+		var body := collider as Node3D
+		var vol := _physics_body_volume(body)
+		if vol < best_vol:
+			best_vol = vol
+			best = body
+	return best
+
+func _physics_body_volume(body: Node3D) -> float:
+	for child in body.get_children():
+		if not child is CollisionShape3D: continue
+		var shape: Shape3D = (child as CollisionShape3D).shape
+		if shape == null: continue
+		if shape is BoxShape3D:
+			var s: Vector3 = (shape as BoxShape3D).size
+			return s.x * s.y * s.z
+		if shape is SphereShape3D:
+			var r: float = (shape as SphereShape3D).radius
+			return (4.0 / 3.0) * PI * r * r * r
+		if shape is CapsuleShape3D:
+			var cs := shape as CapsuleShape3D
+			return PI * cs.radius * cs.radius * (cs.height + (4.0 / 3.0) * cs.radius)
+		return 0.001  # unknown shape — treat as very small
+	return INF
+
 # Returns readable labels for all physics shapes that contain point p.
 # Uses Jolt broadphase and should be safe to call on every cursor move even in large scenes.
 func overlapping_at(p: Vector3) -> Array[String]:
@@ -137,6 +210,21 @@ func probe_report(from: Vector3) -> String:
 				label = entity_label(hit.collider as Node)
 			parts.append("%s %.1fm %s" % [dir_name, dist, label])
 	return ", ".join(parts) + "."
+
+## Raycast probe in all 6 directions. Returns hit positions only (open directions omitted).
+func probe_positions(from: Vector3) -> Array[Vector3]:
+	var root := edited_root()
+	if root == null or not root is Node3D: return []
+	var space := (root as Node3D).get_world_3d().direct_space_state
+	var dirs := [Vector3.RIGHT, Vector3.LEFT, Vector3.UP,
+				 Vector3.DOWN, Vector3.BACK, Vector3.FORWARD]
+	var result: Array[Vector3] = []
+	for dir in dirs:
+		var params := PhysicsRayQueryParameters3D.create(from, from + dir * 100.0)
+		var hit := space.intersect_ray(params)
+		if not hit.is_empty():
+			result.append(hit.position)
+	return result
 
 ## Cast downward from from, return the Y of the first surface hit, or null if none.
 func raycast_down(from: Vector3) -> Variant:

@@ -147,11 +147,11 @@ func _ready() -> void:
 
 func _new_root_room() -> void:
 	var root: Node = dock.scene_query.placement_parent()
-	if root == null: dock._say("No scene open."); return
+	if root == null: dock._say_err("No scene open."); return
 	var size := Vector3(new_w.value, new_h.value, new_d.value)
 	var conflict: String = dock.scene_query.first_overlap(dock.cursor, _placement_footprint(size), root)
 	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
-		dock._say("Cannot place room: overlaps with %s. Move cursor clear first, or hold Shift to force." % conflict)
+		dock._say_err("Cannot place room: overlaps with %s. Move cursor clear first, or hold Shift to force." % conflict)
 		return
 	elif conflict != "":
 		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
@@ -163,20 +163,20 @@ func _new_root_room() -> void:
 	root.add_child(r); r.owner = root; r.rebuild()
 	dock.current_entity = r
 	_refresh()
-	dock._say("Created %s, %.1f by %.1f by %.1f meters." % [r.name, r.size.x, r.size.y, r.size.z])
+	dock._say_ok("Created %s, %.1f by %.1f by %.1f meters." % [r.name, r.size.x, r.size.y, r.size.z])
 
 func _place_room_from_corners() -> void:
 	var root: Node = dock.scene_query.placement_parent()
-	if root == null: dock._say("No scene open."); return
+	if root == null: dock._say_err("No scene open."); return
 	var aabb: AABB = dock.corner_selector.get_aabb()
 	var w: float = aabb.size.x; var h: float = aabb.size.y; var d: float = aabb.size.z
 	if w < 0.1 or h < 0.1 or d < 0.1:
-		dock._say("Corners too close in one or more axes, set corner A and corner B first."); return
+		dock._say_err("Corners too close in one or more axes, set corner A and corner B first."); return
 	var size := Vector3(w, h, d)
 	var pos := Vector3(aabb.position.x + w / 2.0, aabb.position.y, aabb.position.z + d / 2.0)
 	var conflict: String = dock.scene_query.first_overlap(pos, _placement_footprint(size), root)
 	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
-		dock._say("Cannot place room: overlaps with %s. Hold Shift to force." % conflict); return
+		dock._say_err("Cannot place room: overlaps with %s. Hold Shift to force." % conflict); return
 	elif conflict != "":
 		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
 	var r := Room3D.new()
@@ -187,7 +187,7 @@ func _place_room_from_corners() -> void:
 	root.add_child(r); r.owner = root; r.rebuild()
 	dock.current_entity = r
 	_refresh()
-	dock._say("Created %s, %.1f by %.1f by %.1f meters." % [r.name, r.size.x, r.size.y, r.size.z])
+	dock._say_ok("Created %s, %.1f by %.1f by %.1f meters." % [r.name, r.size.x, r.size.y, r.size.z])
 
 func _add_neighbor(side: String) -> void:
 	if not dock.current_entity is SpatialEntity3D:
@@ -207,7 +207,7 @@ func _add_neighbor(side: String) -> void:
 	# Overlap check before creating anything.
 	var conflict: String = dock.scene_query.first_overlap(new_pos, _placement_footprint(new_size), root)
 	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
-		dock._say("Cannot add neighbor: proposed position overlaps with %s. Hold Shift to force." % conflict)
+		dock._say_err("Cannot add neighbor: proposed position overlaps with %s. Hold Shift to force." % conflict)
 		return
 	elif conflict != "":
 		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
@@ -241,7 +241,7 @@ func _add_neighbor(side: String) -> void:
 		_make_door_placeholder(entity as Room3D, side, u_off, cv_cur, door_w.value, door_h.value)
 
 	_refresh()
-	dock._say("Added room %s to %s of %s, connected by doorway." % [r.name, side, entity.name])
+	dock._say_ok("Added room %s to %s of %s, connected by doorway." % [r.name, side, entity.name])
 	_refresh_door_list()
 
 func _punch(side: String) -> void:
@@ -302,7 +302,7 @@ func _apply_resize() -> void:
 	var conflicts := _check_all_overlaps(room, new_pos, new_size, cascade_moves, root)
 	if not conflicts.is_empty():
 		var names := ", ".join(conflicts.map(func(r): return (r as Room3D).name))
-		dock._say("Resize would overlap %s. Choose Proceed or Cancel." % names)
+		dock._say_err("Resize would overlap %s. Choose Proceed or Cancel." % names)
 		_pending_resize = {"room": room, "pos": new_pos, "size": new_size, "cascade": cascade_moves}
 		_resize_conflict_label.text = "Overlaps: %s. Proceed?" % names
 		_resize_conflict_bar.visible = true
@@ -327,6 +327,7 @@ func _on_select(i: int) -> void:
 	await get_tree().process_frame
 	entity.populate_properties_ui(_resize_container)
 	dock._say("Selected %s." % dock.scene_query.entity_label(entity))
+	dock.play_audio_3d("object", (entity as Node3D).global_position)
 	_refresh_door_list()
 	_refresh_wall_list()
 
@@ -416,7 +417,7 @@ func _bake_scene() -> void:
 
 	dock.current_entity = null
 	_refresh()
-	dock._say("Baked %d spatial entit%s with merged meshes and optimised collision." % \
+	dock._say_ok("Baked %d spatial entit%s with merged meshes and optimised collision." % \
 		[entities.size(), "ies" if entities.size() != 1 else "y"])
 
 func _open_bake_to_file_dialog() -> void:
@@ -515,17 +516,17 @@ func _bake_to_file(target_path: String) -> void:
 	var packed := PackedScene.new()
 	var err := packed.pack(dup_root)
 	if err != OK:
-		dock._say("Failed to pack scene (error %d)." % err)
+		dock._say_err("Failed to pack scene (error %d)." % err)
 		dup_root.free()
 		return
 
 	err = ResourceSaver.save(packed, target_path)
 	dup_root.free()
 	if err != OK:
-		dock._say("Failed to save scene (error %d)." % err)
+		dock._say_err("Failed to save scene (error %d)." % err)
 		return
 
-	dock._say("Baked %d entit%s → %s" % [
+	dock._say_ok("Baked %d entit%s → %s" % [
 		entities.size(),
 		"ies" if entities.size() != 1 else "y",
 		target_path
@@ -883,7 +884,7 @@ func _execute_resize(room: Room3D, new_pos: Vector3, new_size: Vector3, cascade_
 	if not cascade_moves.is_empty():
 		msg += " Moved %d connected room%s." % \
 				[cascade_moves.size(), "s" if cascade_moves.size() != 1 else ""]
-	dock._say(msg)
+	dock._say_ok(msg)
 
 func _on_resize_confirm() -> void:
 	if _pending_resize.is_empty(): return

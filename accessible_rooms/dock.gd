@@ -1,6 +1,12 @@
 @tool
 extends VBoxContainer
 
+const SND_OBJECT   := preload("res://addons/accessible_rooms/sounds/object.wav")
+const SND_INSIDE   := preload("res://addons/accessible_rooms/sounds/inside.wav")
+const SND_SUCCESS  := preload("res://addons/accessible_rooms/sounds/success.wav")
+const SND_ERROR    := preload("res://addons/accessible_rooms/sounds/error.wav")
+const SND_DISTANCE := preload("res://addons/accessible_rooms/sounds/distance.wav")
+
 var plugin: EditorPlugin
 var audio_debugger  # AudioPreviewDebugger instance, set by plugin.gd
 
@@ -21,6 +27,12 @@ var tab_rooms  # set in _ready exposes room actions to other tabs
 var tab_place  # set in _ready exposes place actions to other tabs
 
 var announce: Label
+var _snd_object:   AudioStreamPlayer
+var _snd_inside:   AudioStreamPlayer
+var _snd_success:  AudioStreamPlayer
+var _snd_error:    AudioStreamPlayer
+var _snd_distance: AudioStreamPlayer
+var _editor_listener: AudioListener3D = null
 
 func _ready() -> void:
 	name = "Rooms"
@@ -28,6 +40,12 @@ func _ready() -> void:
 	announce = Label.new()
 	announce.accessibility_live = 1  # ACCESSIBILITY_LIVE_POLITE
 	add_child(announce)
+
+	_snd_object   = _make_player(SND_OBJECT)
+	_snd_inside   = _make_player(SND_INSIDE)
+	_snd_success  = _make_player(SND_SUCCESS)
+	_snd_error    = _make_player(SND_ERROR)
+	_snd_distance = _make_player(SND_DISTANCE)
 
 	scene_query = SceneQuery.new()
 	scene_query.plugin = plugin
@@ -101,3 +119,102 @@ func move_cursor_to(pos: Vector3) -> void:
 
 func _say(msg: String) -> void:
 	announce.text = msg
+
+func _say_ok(msg: String) -> void:
+	_say(msg)
+	play_audio_2d("success")
+
+func _say_err(msg: String) -> void:
+	_say(msg)
+	play_audio_2d("error")
+
+func _make_player(stream: AudioStream) -> AudioStreamPlayer:
+	var p := AudioStreamPlayer.new()
+	p.stream = stream
+	add_child(p)
+	return p
+
+func _stream_for(snd_name: String) -> AudioStreamPlayer:
+	match snd_name:
+		"object":   return _snd_object
+		"inside":   return _snd_inside
+		"success":  return _snd_success
+		"error":    return _snd_error
+		"distance": return _snd_distance
+	return null
+
+func play_audio_2d(snd_name: String) -> void:
+	if audio_debugger != null and audio_debugger.has_active_session():
+		audio_debugger.send_play_2d(snd_name)
+		return
+	var p := _stream_for(snd_name)
+	if p != null:
+		p.play()
+
+func play_audio_3d(snd_name: String, source_pos: Vector3) -> void:
+	if audio_debugger != null and audio_debugger.has_active_session():
+		audio_debugger.send_play_3d(snd_name, cursor, source_pos)
+		return
+	_play_editor_3d(snd_name, source_pos)
+
+func play_audio_staggered(snd_name: String, positions: Array) -> void:
+	if positions.is_empty(): return
+	if audio_debugger != null and audio_debugger.has_active_session():
+		audio_debugger.send_play_staggered(snd_name, cursor, positions)
+		return
+	var vp := _get_editor_viewport()
+	if vp == null:
+		var p := _stream_for(snd_name)
+		if p != null: p.play()
+		return
+	var listener := _ensure_editor_listener(vp)
+	listener.global_position = cursor
+	listener.make_current()
+	var stream: AudioStream = _stream_for(snd_name).stream
+	for i in positions.size():
+		var src_pos: Vector3 = positions[i]
+		get_tree().create_timer(i * 0.075).timeout.connect(
+			func() -> void:
+				var player := AudioStreamPlayer3D.new()
+				player.stream = stream
+				player.global_position = src_pos
+				vp.add_child(player)
+				player.play()
+				player.finished.connect(player.queue_free)
+		)
+
+func _get_editor_viewport() -> SubViewport:
+	if not plugin: return null
+	var vp: SubViewport = plugin.get_editor_interface().get_editor_viewport_3d(0)
+	if vp == null: return null
+	vp.audio_listener_enable_3d = true
+	return vp
+
+func _ensure_editor_listener(vp: SubViewport) -> AudioListener3D:
+	if _editor_listener != null and is_instance_valid(_editor_listener):
+		return _editor_listener
+	_editor_listener = AudioListener3D.new()
+	_editor_listener.name = "EditorAudioListener"
+	vp.add_child(_editor_listener)
+	return _editor_listener
+
+func _play_editor_3d(snd_name: String, source_pos: Vector3) -> void:
+	var vp := _get_editor_viewport()
+	if vp == null:
+		var p := _stream_for(snd_name)
+		if p != null: p.play()
+		return
+	var listener := _ensure_editor_listener(vp)
+	listener.global_position = cursor
+	listener.make_current()
+	var player := AudioStreamPlayer3D.new()
+	player.stream = _stream_for(snd_name).stream
+	player.global_position = source_pos
+	vp.add_child(player)
+	player.play()
+	player.finished.connect(player.queue_free)
+
+func _exit_tree() -> void:
+	if _editor_listener != null and is_instance_valid(_editor_listener):
+		_editor_listener.queue_free()
+		_editor_listener = null

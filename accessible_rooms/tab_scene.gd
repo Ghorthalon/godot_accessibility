@@ -80,6 +80,8 @@ func _on_select(index: int) -> void:
 	sel.clear()
 	sel.add_node(node)
 	dock._say("Selected %s." % node.name)
+	if node is Node3D:
+		dock.play_audio_3d("object", (node as Node3D).global_position)
 
 func _on_editor_selection_changed() -> void:
 	if not dock.follow_selection: return

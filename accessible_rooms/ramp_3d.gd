@@ -197,6 +197,9 @@ func contains_point(p: Vector3) -> bool:
 				lp.y <= height_change + clearance and absf(lp.x) <= half_l
 	return false
 
+func bounding_volume() -> float:
+	return width * length * (height_change + clearance)
+
 func populate_properties_ui(c: VBoxContainer) -> void:
 	_add_spinbox(c, "W:",     0.5, 50.0,  0.5, width)
 	_add_spinbox(c, "Len:",   0.5, 100.0, 0.5, length)

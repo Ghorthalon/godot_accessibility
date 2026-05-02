@@ -35,6 +35,12 @@ func entity_label() -> String:
 func contains_point(_p: Vector3) -> bool:
 	return false
 
+## Returns the approximate bounding volume in cubic metres.
+## Used to pick the smallest container when the cursor is inside multiple entities.
+## Subclasses should override with their actual volume formula.
+func bounding_volume() -> float:
+	return INF
+
 ## Regenerate all procedural geometry.  Called after any property changes.
 func rebuild() -> void:
 	pass

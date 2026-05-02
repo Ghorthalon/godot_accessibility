@@ -6,14 +6,14 @@ var dock  # reference to parent dock (dock.gd)
 var node_type_option: OptionButton
 var scene_path_edit: LineEdit
 var zone_surface_edit: LineEdit
-var zone_corner_a: Vector3 = Vector3.ZERO
-var zone_corner_b: Vector3 = Vector3.ZERO
-var zone_corner_a_label: Label
-var zone_corner_b_label: Label
 
 var _floor_offset: SpinBox
 var _wall_offset: SpinBox
 var _door_inset: SpinBox
+
+var _phys_width: SpinBox
+var _phys_height: SpinBox
+var _phys_depth: SpinBox
 
 func _ready() -> void:
 	var pn_lbl := Label.new(); pn_lbl.text = "Place node at cursor:"
@@ -44,6 +44,29 @@ func _ready() -> void:
 	add_child(sc_row)
 
 	add_child(HSeparator.new())
+	var po_lbl := Label.new(); po_lbl.text = "Insert physical object:"
+	add_child(po_lbl)
+	var po_row := HBoxContainer.new()
+	var pw_lbl := Label.new(); pw_lbl.text = "W:"
+	_phys_width = SpinBox.new()
+	_phys_width.min_value = 0.1; _phys_width.max_value = 20.0
+	_phys_width.step = 0.1; _phys_width.value = 1.0
+	var ph_lbl := Label.new(); ph_lbl.text = "H:"
+	_phys_height = SpinBox.new()
+	_phys_height.min_value = 0.1; _phys_height.max_value = 20.0
+	_phys_height.step = 0.1; _phys_height.value = 1.0
+	var pd_lbl := Label.new(); pd_lbl.text = "D:"
+	_phys_depth = SpinBox.new()
+	_phys_depth.min_value = 0.1; _phys_depth.max_value = 20.0
+	_phys_depth.step = 0.1; _phys_depth.value = 1.0
+	po_row.add_child(pw_lbl); po_row.add_child(_phys_width)
+	po_row.add_child(ph_lbl); po_row.add_child(_phys_height)
+	po_row.add_child(pd_lbl); po_row.add_child(_phys_depth)
+	add_child(po_row)
+	_btn("Create physical object at cursor", _insert_physical_object)
+	_btn("Create from selection (corner A/B)", _insert_physical_object_from_selection)
+
+	add_child(HSeparator.new())
 	var fz_lbl := Label.new(); fz_lbl.text = "Floor zones:"
 	add_child(fz_lbl)
 
@@ -54,21 +77,6 @@ func _ready() -> void:
 	zone_surface_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	surf_row.add_child(surf_lbl); surf_row.add_child(zone_surface_edit)
 	add_child(surf_row)
-
-	var corner_row := HBoxContainer.new()
-	var ca_btn := Button.new(); ca_btn.text = "Set corner A (cursor)"
-	ca_btn.pressed.connect(_set_zone_corner_a)
-	var cb_btn := Button.new(); cb_btn.text = "Set corner B (cursor)"
-	cb_btn.pressed.connect(_set_zone_corner_b)
-	corner_row.add_child(ca_btn); corner_row.add_child(cb_btn)
-	add_child(corner_row)
-
-	var corner_labels_row := HBoxContainer.new()
-	zone_corner_a_label = Label.new(); zone_corner_a_label.text = "A: "
-	zone_corner_b_label = Label.new(); zone_corner_b_label.text = "B: "
-	corner_labels_row.add_child(zone_corner_a_label)
-	corner_labels_row.add_child(zone_corner_b_label)
-	add_child(corner_labels_row)
 
 	_btn("Add zone to current room floor", _add_floor_zone)
 	_btn("Clear all zones from current room floor", _clear_floor_zones)
@@ -150,24 +158,11 @@ func _insert_scene_at_cursor() -> void:
 
 # --- Floor zones ---
 
-func _set_zone_corner_a() -> void:
-	zone_corner_a = dock.cursor
-	zone_corner_a_label.text = "A: %.1f, %.1f" % [dock.cursor.x, dock.cursor.z]
-	dock._say("Zone corner A set at %.1f, %.1f." % [dock.cursor.x, dock.cursor.z])
-
-func _set_zone_corner_b() -> void:
-	zone_corner_b = dock.cursor
-	zone_corner_b_label.text = "B: %.1f, %.1f" % [dock.cursor.x, dock.cursor.z]
-	dock._say("Zone corner B set at %.1f, %.1f." % [dock.cursor.x, dock.cursor.z])
-
 func _add_floor_zone() -> void:
 	if not dock.current_entity is Room3D: dock._say("No room selected."); return
 	var room := dock.current_entity as Room3D
-	var ax: float = zone_corner_a.x - room.position.x
-	var az: float = zone_corner_a.z - room.position.z
-	var bx: float = zone_corner_b.x - room.position.x
-	var bz: float = zone_corner_b.z - room.position.z
-	var rect := Rect2(minf(ax, bx), minf(az, bz), absf(bx - ax), absf(bz - az))
+	var world_rect: Rect2 = dock.corner_selector.get_rect2_xz()
+	var rect := Rect2(world_rect.position - Vector2(room.position.x, room.position.z), world_rect.size)
 	if rect.size.x < 0.01 or rect.size.y < 0.01:
 		dock._say("Zone too small, move cursor between corners first."); return
 	var surface := zone_surface_edit.text.strip_edges()
@@ -254,3 +249,57 @@ func _measure_space() -> void:
 
 func _btn(label: String, cb: Callable) -> void:
 	var b := Button.new(); b.text = label; b.pressed.connect(cb); add_child(b)
+
+# --- Physical object insertion ---
+
+func _insert_physical_object() -> void:
+	var parent: Node = dock.scene_query.placement_parent()
+	if parent == null: dock._say("No scene open."); return
+	var size := Vector3(_phys_width.value, _phys_height.value, _phys_depth.value)
+	var reason := _fit_check(dock.cursor, size)
+	if reason != "":
+		dock._say("Object (%.1f x %.1f x %.1f m) does not fit: %s." % [size.x, size.y, size.z, reason]); return
+	_create_physical_object(parent, dock.scene_query.edited_root(), dock.cursor, size)
+
+func _insert_physical_object_from_selection() -> void:
+	var parent: Node = dock.scene_query.placement_parent()
+	if parent == null: dock._say("No scene open."); return
+	var aabb: AABB = dock.corner_selector.get_aabb()
+	if aabb.size.x < 0.05 or aabb.size.y < 0.05 or aabb.size.z < 0.05:
+		dock._say("Selection too small — set corner A and B first."); return
+	var pos := Vector3(aabb.position.x + aabb.size.x / 2.0, aabb.position.y, aabb.position.z + aabb.size.z / 2.0)
+	var reason := _fit_check(pos, aabb.size)
+	if reason != "":
+		dock._say("Object (%.1f x %.1f x %.1f m) does not fit: %s." % [aabb.size.x, aabb.size.y, aabb.size.z, reason]); return
+	_create_physical_object(parent, dock.scene_query.edited_root(), pos, aabb.size)
+
+func _fit_check(pos: Vector3, size: Vector3) -> String:
+	var space: Dictionary = dock.scene_query.measure_space(pos)
+	if space["east"] < size.x / 2.0 or space["west"] < size.x / 2.0:
+		return "not enough east-west space (need %.1fm, have %.1f/%.1fm)" % [size.x, space["west"], space["east"]]
+	if space["north"] < size.z / 2.0 or space["south"] < size.z / 2.0:
+		return "not enough north-south space (need %.1fm, have %.1f/%.1fm)" % [size.z, space["north"], space["south"]]
+	if space["up"] < size.y:
+		return "not enough height (need %.1fm, have %.1fm)" % [size.y, space["up"]]
+	return ""
+
+func _create_physical_object(parent: Node, owner_node: Node, pos: Vector3, size: Vector3) -> void:
+	var body := StaticBody3D.new()
+	body.name = "PhysicalObject%d" % (parent.get_child_count() + 1)
+	body.position = pos
+	var cs := CollisionShape3D.new()
+	var box_shape := BoxShape3D.new()
+	box_shape.size = size
+	cs.shape = box_shape
+	cs.position = Vector3(0.0, size.y / 2.0, 0.0)
+	var mi := MeshInstance3D.new()
+	var box_mesh := BoxMesh.new()
+	box_mesh.size = size
+	mi.mesh = box_mesh
+	mi.position = Vector3(0.0, size.y / 2.0, 0.0)
+	body.add_child(cs); body.add_child(mi)
+	parent.add_child(body)
+	body.owner = owner_node; cs.owner = owner_node; mi.owner = owner_node
+	dock.last_placed_node = body
+	dock._say("Created %.1f x %.1f x %.1f m physical object at %.1f %.1f %.1f." % \
+		[size.x, size.y, size.z, pos.x, pos.y, pos.z])

@@ -9,10 +9,6 @@ var door_w: SpinBox; var door_h: SpinBox
 var room_list: ItemList
 var _resize_container: VBoxContainer
 var create_door_placeholder: CheckBox
-var room_corner_a: Vector3 = Vector3.ZERO
-var room_corner_b: Vector3 = Vector3.ZERO
-var room_corner_a_label: Label
-var room_corner_b_label: Label
 var _door_item_list: ItemList
 var _door_props_container: VBoxContainer
 var _current_door_idx: int = -1
@@ -71,18 +67,6 @@ func _ready() -> void:
 	add_child(HSeparator.new())
 	var cc_lbl := Label.new(); cc_lbl.text = "Corner-to-corner room:"
 	add_child(cc_lbl)
-	var cc_row := HBoxContainer.new()
-	var ca_btn := Button.new(); ca_btn.text = "Set corner A (cursor)"
-	ca_btn.pressed.connect(_set_room_corner_a)
-	var cb_btn := Button.new(); cb_btn.text = "Set corner B (cursor)"
-	cb_btn.pressed.connect(_set_room_corner_b)
-	cc_row.add_child(ca_btn); cc_row.add_child(cb_btn)
-	add_child(cc_row)
-	var cc_labels_row := HBoxContainer.new()
-	room_corner_a_label = Label.new(); room_corner_a_label.text = "A: "
-	room_corner_b_label = Label.new(); room_corner_b_label.text = "B: "
-	cc_labels_row.add_child(room_corner_a_label); cc_labels_row.add_child(room_corner_b_label)
-	add_child(cc_labels_row)
 	_btn("Place room from corners", _place_room_from_corners)
 
 	add_child(HSeparator.new())
@@ -181,29 +165,15 @@ func _new_root_room() -> void:
 	_refresh()
 	dock._say("Created %s, %.1f by %.1f by %.1f meters." % [r.name, r.size.x, r.size.y, r.size.z])
 
-func _set_room_corner_a() -> void:
-	room_corner_a = dock.cursor
-	room_corner_a_label.text = "A: x=%.1f y=%.1f z=%.1f" % [dock.cursor.x, dock.cursor.y, dock.cursor.z]
-	dock._say("Room corner A set at x=%.1f y=%.1f z=%.1f." % [dock.cursor.x, dock.cursor.y, dock.cursor.z])
-
-func _set_room_corner_b() -> void:
-	room_corner_b = dock.cursor
-	room_corner_b_label.text = "B: x=%.1f y=%.1f z=%.1f" % [dock.cursor.x, dock.cursor.y, dock.cursor.z]
-	dock._say("Room corner B set at x=%.1f y=%.1f z=%.1f." % [dock.cursor.x, dock.cursor.y, dock.cursor.z])
-
 func _place_room_from_corners() -> void:
 	var root: Node = dock.scene_query.placement_parent()
 	if root == null: dock._say("No scene open."); return
-	var w: float = absf(room_corner_b.x - room_corner_a.x)
-	var h: float = absf(room_corner_b.y - room_corner_a.y)
-	var d: float = absf(room_corner_b.z - room_corner_a.z)
+	var aabb: AABB = dock.corner_selector.get_aabb()
+	var w: float = aabb.size.x; var h: float = aabb.size.y; var d: float = aabb.size.z
 	if w < 0.1 or h < 0.1 or d < 0.1:
 		dock._say("Corners too close in one or more axes, set corner A and corner B first."); return
 	var size := Vector3(w, h, d)
-	var pos := Vector3(
-		(room_corner_a.x + room_corner_b.x) / 2.0,
-		minf(room_corner_a.y, room_corner_b.y),
-		(room_corner_a.z + room_corner_b.z) / 2.0)
+	var pos := Vector3(aabb.position.x + w / 2.0, aabb.position.y, aabb.position.z + d / 2.0)
 	var conflict: String = dock.scene_query.first_overlap(pos, _placement_footprint(size), root)
 	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
 		dock._say("Cannot place room: overlaps with %s. Hold Shift to force." % conflict); return

@@ -13,6 +13,7 @@ var scene_query: SceneQuery
 var use_selected_node: bool = false
 var follow_selection: bool = false
 var last_placed_node: Node3D
+var corner_selector: CornerSelector  # shared selection, set by tab_cursor
 
 signal cursor_jumped
 

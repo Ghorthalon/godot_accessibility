@@ -15,13 +15,13 @@ extends Panel
 ##   L                       report cursor location
 ##   Ctrl+R                  new standalone room at cursor
 ##   Ctrl+D                  punch door at cursor (nearest wall)
-##   Ctrl+1 / Ctrl+2 / Ctrl+3   set room corner A / B / place room from corners
+##   Ctrl+1 / Ctrl+2 / Ctrl+3   set corner A / B / place room from corners
 ##   Shift+F                 nudge selected node to floor
 ##   Shift+W                 snap selected node to nearest wall
 ##   Shift+D                 snap selected node to nearest doorway
 ##   Shift+C                 center selected node E W
 ##   Shift+V                 center selected node N S
-##   Ctrl+Shift+1 / 2 / 3   set zone corner A / B / add zone to floor
+##   Ctrl+Shift+3            add zone to floor
 
 signal move_cursor(axis: String)   # "-x" "+x" "-y" "+y" "-z" "+z"
 signal jump_entity(axis: String)
@@ -34,16 +34,14 @@ signal probe
 signal report_location
 signal new_standalone_room
 signal punch_door_at_cursor
-signal room_corner_a
-signal room_corner_b
+signal corner_a
+signal corner_b
 signal place_room_from_corners
 signal nudge_node_to_floor
 signal snap_node_to_wall
 signal snap_node_to_doorway
 signal center_node_ew
 signal center_node_ns
-signal zone_corner_a
-signal zone_corner_b
 signal add_zone_to_floor
 
 func _ready() -> void:
@@ -61,11 +59,11 @@ func _gui_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed: return
 	var key := event as InputEventKey
 
-	# Ctrl+Shift zone actions
+	# Ctrl+Shift actions
 	if key.ctrl_pressed and key.shift_pressed:
 		match key.keycode:
-			KEY_1: accept_event(); zone_corner_a.emit()
-			KEY_2: accept_event(); zone_corner_b.emit()
+			KEY_1: accept_event(); corner_a.emit()
+			KEY_2: accept_event(); corner_b.emit()
 			KEY_3: accept_event(); add_zone_to_floor.emit()
 		return
 
@@ -96,8 +94,8 @@ func _gui_input(event: InputEvent) -> void:
 			KEY_Z:     accept_event(); jump_entity.emit("-y")
 			KEY_R:     accept_event(); new_standalone_room.emit()
 			KEY_D:     accept_event(); punch_door_at_cursor.emit()
-			KEY_1:     accept_event(); room_corner_a.emit()
-			KEY_2:     accept_event(); room_corner_b.emit()
+			KEY_1:     accept_event(); corner_a.emit()
+			KEY_2:     accept_event(); corner_b.emit()
 			KEY_3:     accept_event(); place_room_from_corners.emit()
 		return
 

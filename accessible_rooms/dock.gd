@@ -177,8 +177,8 @@ func play_audio_staggered(snd_name: String, positions: Array) -> void:
 			func() -> void:
 				var player := AudioStreamPlayer3D.new()
 				player.stream = stream
-				player.global_position = src_pos
 				vp.add_child(player)
+				player.global_position = src_pos
 				player.play()
 				player.finished.connect(player.queue_free)
 		)
@@ -209,8 +209,8 @@ func _play_editor_3d(snd_name: String, source_pos: Vector3) -> void:
 	listener.make_current()
 	var player := AudioStreamPlayer3D.new()
 	player.stream = _stream_for(snd_name).stream
-	player.global_position = source_pos
 	vp.add_child(player)
+	player.global_position = source_pos
 	player.play()
 	player.finished.connect(player.queue_free)
 

@@ -256,8 +256,11 @@ func first_overlap(pos: Vector3, footprint: Vector3, root: Node, exclude: Node =
 		if not child is SpatialEntity3D: continue
 		var child_fp := _entity_footprint(child as SpatialEntity3D)
 		if child_fp == Vector3.ZERO: continue
-		if aabbs_overlap(pos, footprint, (child as Node3D).position, child_fp):
-			return child.name
+		if not aabbs_overlap(pos, footprint, (child as Node3D).position, child_fp): continue
+		# Full containment means no geometry can actually intersect, not a conflict.
+		if aabb_contains(pos, footprint, (child as Node3D).position, child_fp): continue
+		if aabb_contains((child as Node3D).position, child_fp, pos, footprint): continue
+		return child.name
 	return ""
 
 ## Returns all Room3D nodes in root whose opposite wall is flush with room's side wall
@@ -414,3 +417,13 @@ static func aabbs_overlap(a_pos: Vector3, a_size: Vector3, b_pos: Vector3, b_siz
 		   (a_pos.y + a_size.y) > b_pos.y and \
 		   (a_pos.z - a_size.z/2) < (b_pos.z + b_size.z/2) and \
 		   (a_pos.z + a_size.z/2) > (b_pos.z - b_size.z/2)
+
+## Returns true when inner is fully enclosed by outer (boundaries may touch within EPSILON).
+static func aabb_contains(outer_pos: Vector3, outer_size: Vector3,
+		inner_pos: Vector3, inner_size: Vector3) -> bool:
+	return (inner_pos.x - inner_size.x / 2) >= (outer_pos.x - outer_size.x / 2) - SpatialEntity3D.EPSILON and \
+		   (inner_pos.x + inner_size.x / 2) <= (outer_pos.x + outer_size.x / 2) + SpatialEntity3D.EPSILON and \
+		   inner_pos.y >= outer_pos.y - SpatialEntity3D.EPSILON and \
+		   (inner_pos.y + inner_size.y) <= (outer_pos.y + outer_size.y) + SpatialEntity3D.EPSILON and \
+		   (inner_pos.z - inner_size.z / 2) >= (outer_pos.z - outer_size.z / 2) - SpatialEntity3D.EPSILON and \
+		   (inner_pos.z + inner_size.z / 2) <= (outer_pos.z + outer_size.z / 2) + SpatialEntity3D.EPSILON

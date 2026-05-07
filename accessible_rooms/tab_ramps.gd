@@ -11,6 +11,8 @@ var door_w_ref: SpinBox  # mirrors dock's door_w, set via tab_rooms if needed
 var _door_w: float = 1.2
 var _door_h: float = 2.5
 var _standalone_dir: String = "north"
+var build_walls: CheckBox
+var build_ceiling: CheckBox
 
 func _ready() -> void:
 	var rl := Label.new(); rl.text = "Ramp size (m):"
@@ -26,6 +28,17 @@ func _ready() -> void:
 		var lbl := Label.new(); lbl.text = pair[0]
 		row.add_child(lbl); row.add_child(pair[1])
 	add_child(row)
+
+	var surface_row := HBoxContainer.new()
+	build_walls = CheckBox.new()
+	build_walls.text = "Build walls"
+	build_walls.button_pressed = true
+	build_ceiling = CheckBox.new()
+	build_ceiling.text = "Build ceiling"
+	build_ceiling.button_pressed = true
+	surface_row.add_child(build_walls)
+	surface_row.add_child(build_ceiling)
+	add_child(surface_row)
 
 	add_child(HSeparator.new())
 	var dl := Label.new(); dl.text = "Connecting doorway (m):"
@@ -89,7 +102,7 @@ func _add_ramp(side: String) -> void:
 		"east",  "west":  footprint = Vector3(r.length, r.clearance, r.width)
 	var ramp_pos: Vector3 = room.position + room.neighbor_offset(side, footprint)
 
-	var conflict: String = dock.scene_query.first_overlap(ramp_pos, footprint, root)
+	var conflict: String = dock.scene_query.first_overlap(ramp_pos, _ramp_footprint(footprint), root)
 	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
 		dock._say(("Cannot place ramp: %s already occupies the %s footprint. " +
 			"Remove or move it first, or hold Shift to force.") % [conflict, side])
@@ -97,6 +110,7 @@ func _add_ramp(side: String) -> void:
 	elif conflict != "":
 		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
 
+	_apply_surface_settings(r)
 	root.add_child(r)
 	r.owner = root
 	r.position = ramp_pos
@@ -135,13 +149,14 @@ func _new_standalone_ramp() -> void:
 		"north", "south": footprint = Vector3(r.width, r.height_change + r.clearance, r.length)
 		"east",  "west":  footprint = Vector3(r.length, r.height_change + r.clearance, r.width)
 
-	var conflict: String = dock.scene_query.first_overlap(dock.cursor, footprint, root)
+	var conflict: String = dock.scene_query.first_overlap(dock.cursor, _ramp_footprint(footprint), root)
 	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
 		dock._say("Cannot place ramp: overlaps with %s. Move cursor clear first, or hold Shift to force." % conflict)
 		return
 	elif conflict != "":
 		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
 
+	_apply_surface_settings(r)
 	root.add_child(r)
 	r.owner = root
 	r.position = dock.cursor
@@ -155,6 +170,17 @@ func _new_standalone_ramp() -> void:
 		[r.high_end, r.height_change, r.length, r.slope_degrees()])
 
 # ---------------------------------------------------------------------------
+
+func _apply_surface_settings(r: Ramp3D) -> void:
+	if not build_walls.button_pressed:
+		r.wall_sides_enabled = false
+	if not build_ceiling.button_pressed:
+		r.ceiling_enabled = false
+
+func _ramp_footprint(s: Vector3) -> Vector3:
+	if build_walls.button_pressed:
+		return s
+	return Vector3(s.x, 0.01, s.z)
 
 func _spinbox(min_v: float, max_v: float, step_v: float, default_v: float) -> SpinBox:
 	var s := SpinBox.new()

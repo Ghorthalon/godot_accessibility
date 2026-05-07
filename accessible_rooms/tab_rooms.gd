@@ -851,6 +851,8 @@ func _check_all_overlaps(primary: Room3D, new_pos: Vector3, new_size: Vector3,
 			if not child is Room3D: continue
 			var other := child as Room3D
 			if SceneQuery.aabbs_overlap(m_pos, m_size, other.position, other.size):
+				if SceneQuery.aabb_contains(m_pos, m_size, other.position, other.size): continue
+				if SceneQuery.aabb_contains(other.position, other.size, m_pos, m_size): continue
 				if other not in conflicts:
 					conflicts.append(other)
 	return conflicts

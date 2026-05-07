@@ -84,6 +84,11 @@ func _ready() -> void:
 	tab_ramps.dock = self
 	tabs.add_child(tab_ramps)
 
+	var tab_stairs = preload("res://addons/accessible_rooms/tab_stairs.gd").new()
+	tab_stairs.name = "Stairs"
+	tab_stairs.dock = self
+	tabs.add_child(tab_stairs)
+
 	var tab_cursor = preload("res://addons/accessible_rooms/tab_cursor.gd").new()
 	tab_cursor.name = "Cursor"
 	tab_cursor.dock = self

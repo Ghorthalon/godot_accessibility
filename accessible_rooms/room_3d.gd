@@ -292,6 +292,31 @@ func neighbor_doorway_side(side: String) -> String:
 func has_wall(_side: String) -> bool:
 	return true
 
+func connection_probe_points() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for side in ["north", "south", "east", "west"]:
+		var wall_cfg := cfg(side)
+		if wall_cfg == null or not wall_cfg.enabled: continue
+		var normal: Vector3 = NORMALS[side]
+		var face_center_world := position + _face_center_local(side)
+		var face_width: float = size.x if side in ["north", "south"] else size.z
+		result.append({
+			"label": side + " wall",
+			"probe_world": face_center_world + normal * 0.05,
+			"face_center_world": face_center_world,
+			"face_width": face_width,
+			"face_height": size.y,
+		})
+	return result
+
+func _face_center_local(side: String) -> Vector3:
+	match side:
+		"north": return Vector3(0, size.y / 2.0, -size.z / 2.0)
+		"south": return Vector3(0, size.y / 2.0,  size.z / 2.0)
+		"east":  return Vector3( size.x / 2.0, size.y / 2.0, 0)
+		"west":  return Vector3(-size.x / 2.0, size.y / 2.0, 0)
+	return Vector3.ZERO
+
 func punch_doorway(side: String, width := 1.2, height := 2.1) -> void:
 	## Appends a centred floorlevel doorway without removing existing ones.
 	add_doorway(side, 0.0, -size.y / 2.0 + height / 2.0, width, height)

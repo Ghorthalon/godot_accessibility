@@ -23,6 +23,7 @@ var _cascade_checkbox: CheckBox
 var _pending_resize: Dictionary = {}
 var _resize_conflict_bar: HBoxContainer
 var _resize_conflict_label: Label
+var _connection_container: VBoxContainer
 
 func _ready() -> void:
 	var nl := Label.new(); nl.text = "New room size (m):"
@@ -140,6 +141,12 @@ func _ready() -> void:
 	_wall_props_container = VBoxContainer.new()
 	add_child(_wall_props_container)
 	_btn("Apply wall changes", _apply_wall_changes)
+
+	add_child(HSeparator.new())
+	var conn_hdr := Label.new(); conn_hdr.text = "Connections:"
+	add_child(conn_hdr)
+	_connection_container = VBoxContainer.new()
+	add_child(_connection_container)
 
 	_refresh()
 
@@ -315,9 +322,25 @@ func _refresh() -> void:
 	var root: Node = dock.scene_query.placement_parent() if dock.scene_query else null
 	if root == null: return
 	for c in root.get_children():
-		if c is SpatialEntity3D:
-			room_list.add_item(dock.scene_query.entity_label(c))
-			room_list.set_item_metadata(room_list.item_count - 1, c)
+		if not c is SpatialEntity3D: continue
+		var entity := c as SpatialEntity3D
+		var label: String = dock.scene_query.entity_label(entity)
+		var suffix := _connection_suffix(entity)
+		if suffix != "": label += " " + suffix
+		room_list.add_item(label)
+		room_list.set_item_metadata(room_list.item_count - 1, entity)
+
+func _connection_suffix(entity: SpatialEntity3D) -> String:
+	if dock.scene_query == null: return ""
+	var conns: Array[ConnectionInfo] = dock.scene_query.find_connections(entity)
+	if conns.is_empty(): return ""
+	var n_open := 0; var n_blocked := 0
+	for info: ConnectionInfo in conns:
+		if info.status == ConnectionInfo.Status.OPEN: n_open += 1
+		else: n_blocked += 1
+	if n_open > 0 and n_blocked > 0: return "[%d open, %d blocked]" % [n_open, n_blocked]
+	if n_open > 0: return "[%d open]" % n_open
+	return "[%d blocked]" % n_blocked
 
 func _on_select(i: int) -> void:
 	var entity := room_list.get_item_metadata(i) as SpatialEntity3D
@@ -330,6 +353,7 @@ func _on_select(i: int) -> void:
 	dock.play_audio_3d("object", (entity as Node3D).global_position)
 	_refresh_door_list()
 	_refresh_wall_list()
+	_refresh_connection_list(entity)
 
 func _bake_scene() -> void:
 	var root: Node = dock.scene_query.placement_parent()
@@ -650,8 +674,8 @@ func _refresh_door_list() -> void:
 		return
 	for i in room.door_list.size():
 		var d: DoorEntry = room.door_list[i]
-		var tag := (" \"%s\"" % d.label) if d.label != "" else ""
-		_door_item_list.add_item("[%d] %s%s  %.1f×%.1fm" % [i, d.side, tag, d.width, d.height])
+		var name_part := ("\"%s\" " % d.label) if d.label != "" else ""
+		_door_item_list.add_item("[%d] %s%s  U:%.2f V:%.2f  %.1f×%.1fm" % [i, name_part, d.side, d.center_u, d.center_v, d.width, d.height])
 		_door_item_list.set_item_metadata(i, i)
 
 func _on_door_select(i: int) -> void:
@@ -662,6 +686,13 @@ func _on_door_select(i: int) -> void:
 	var d: DoorEntry = room.door_list[_current_door_idx]
 	for c in _door_props_container.get_children(): c.queue_free()
 	await get_tree().process_frame
+	var name_row := HBoxContainer.new()
+	var name_lbl := Label.new(); name_lbl.text = "Name:"
+	var name_edit := LineEdit.new()
+	name_edit.text = d.label
+	name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_row.add_child(name_lbl); name_row.add_child(name_edit)
+	_door_props_container.add_child(name_row)
 	var side_row := HBoxContainer.new()
 	var side_lbl := Label.new(); side_lbl.text = "Side:"
 	var side_opt := OptionButton.new()
@@ -683,10 +714,12 @@ func _apply_door_changes() -> void:
 		dock._say("Door index out of range."); return
 	var d: DoorEntry = room.door_list[_current_door_idx]
 	var children := _door_props_container.get_children()
-	var side_opt := children[0].get_child(1) as OptionButton
+	var name_edit2 := children[0].get_child(1) as LineEdit
+	d.label = name_edit2.text
+	var side_opt := children[1].get_child(1) as OptionButton
 	d.side = side_opt.get_item_text(side_opt.selected)
 	var spins: Array[SpinBox] = []
-	for row in children.slice(1):
+	for row in children.slice(2):
 		for c in row.get_children():
 			if c is SpinBox: spins.append(c)
 	if spins.size() >= 4:
@@ -703,6 +736,31 @@ func _remove_selected_door() -> void:
 	room.remove_door(_current_door_idx)
 	_refresh_door_list()
 	dock._say("Removed door %d from %s." % [_current_door_idx, room.name])
+
+func _refresh_connection_list(entity: SpatialEntity3D) -> void:
+	for child in _connection_container.get_children(): child.queue_free()
+	if dock.scene_query == null: return
+	await get_tree().process_frame
+	var conns: Array[ConnectionInfo] = dock.scene_query.find_connections(entity)
+	if conns.is_empty():
+		var lbl := Label.new(); lbl.text = "No connections found."
+		_connection_container.add_child(lbl); return
+	for info: ConnectionInfo in conns:
+		var to_name: String = info.to_entity.name if info.to_entity != null else "unknown"
+		var status_text: String
+		if info.status == ConnectionInfo.Status.OPEN:
+			status_text = "open"
+		else:
+			status_text = "blocked, add a door on the %s wall of %s" % [info.to_wall_side, to_name]
+		var line: String
+		if info.to_wall_side != "":
+			line = "%s connects to %s (%s wall): %s" % [info.from_label, to_name, info.to_wall_side, status_text]
+		else:
+			line = "%s connects to %s: %s" % [info.from_label, to_name, status_text]
+		var lbl := Label.new()
+		lbl.text = line
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_connection_container.add_child(lbl)
 
 func _refresh_wall_list() -> void:
 	_wall_item_list.clear()

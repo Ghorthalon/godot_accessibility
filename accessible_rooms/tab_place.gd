@@ -266,7 +266,7 @@ func _insert_physical_object_from_selection() -> void:
 	if parent == null: dock._say("No scene open."); return
 	var aabb: AABB = dock.corner_selector.get_aabb()
 	if aabb.size.x < 0.05 or aabb.size.y < 0.05 or aabb.size.z < 0.05:
-		dock._say("Selection too small — set corner A and B first."); return
+		dock._say("Selection too small, set corner A and B first."); return
 	var pos := Vector3(aabb.position.x + aabb.size.x / 2.0, aabb.position.y, aabb.position.z + aabb.size.z / 2.0)
 	var reason := _fit_check(pos, aabb.size)
 	if reason != "":

@@ -141,7 +141,7 @@ func _physics_body_volume(body: Node3D) -> float:
 		if shape is CapsuleShape3D:
 			var cs := shape as CapsuleShape3D
 			return PI * cs.radius * cs.radius * (cs.height + (4.0 / 3.0) * cs.radius)
-		return 0.001  # unknown shape — treat as very small
+		return 0.001  # unknown shape, treat as very small
 	return INF
 
 # Returns readable labels for all physics shapes that contain point p.
@@ -427,3 +427,81 @@ static func aabb_contains(outer_pos: Vector3, outer_size: Vector3,
 		   (inner_pos.y + inner_size.y) <= (outer_pos.y + outer_size.y) + SpatialEntity3D.EPSILON and \
 		   (inner_pos.z - inner_size.z / 2) >= (outer_pos.z - outer_size.z / 2) - SpatialEntity3D.EPSILON and \
 		   (inner_pos.z + inner_size.z / 2) <= (outer_pos.z + outer_size.z / 2) + SpatialEntity3D.EPSILON
+
+# ---------------------------------------------------------------------------
+# Connection detection
+# ---------------------------------------------------------------------------
+
+## Face must be within this distance of a room wall to trigger a door check.
+## Faces farther away are treated as interior connections (no wall in the way).
+const ADJACENCY_TOLERANCE := 0.2
+
+## Returns a ConnectionInfo for each connectable face of entity that has
+## another SpatialEntity3D on the other side.
+func find_connections(entity: SpatialEntity3D) -> Array[ConnectionInfo]:
+	var result: Array[ConnectionInfo] = []
+	for face in entity.connection_probe_points():
+		var probe: Vector3 = face["probe_world"]
+		var candidates := entities_containing_sorted(probe)
+		var neighbor: SpatialEntity3D = null
+		for c in candidates:
+			if c != entity: neighbor = c; break
+		if neighbor == null: continue
+		var info := ConnectionInfo.new()
+		info.from_label = face["label"]
+		info.to_entity = neighbor
+		if neighbor is Room3D:
+			var room := neighbor as Room3D
+			var wall_side := _nearest_room_wall(room, face["face_center_world"])
+			info.to_wall_side = wall_side
+			if wall_side == "":
+				info.status = ConnectionInfo.Status.OPEN  # interior, no wall in the way
+			else:
+				info.status = _wall_open_status(room, wall_side,
+					face["face_center_world"], face["face_width"], face["face_height"])
+		else:
+			info.to_wall_side = ""
+			info.status = ConnectionInfo.Status.OPEN  # ramps/stairs have open ends
+		result.append(info)
+	return result
+
+## Returns the cardinal wall side of room whose plane is closest to face_center_world,
+## or "" if all walls are farther than ADJACENCY_TOLERANCE (face is in the room interior).
+func _nearest_room_wall(room: Room3D, face_center_world: Vector3) -> String:
+	var checks := {
+		"north": absf(face_center_world.z - (room.position.z - room.size.z / 2.0)),
+		"south": absf(face_center_world.z - (room.position.z + room.size.z / 2.0)),
+		"east":  absf(face_center_world.x - (room.position.x + room.size.x / 2.0)),
+		"west":  absf(face_center_world.x - (room.position.x - room.size.x / 2.0)),
+	}
+	var best_side := ""
+	var best_dist := INF
+	for side in checks:
+		if checks[side] < best_dist:
+			best_dist = checks[side]; best_side = side
+	return best_side if best_dist <= ADJACENCY_TOLERANCE else ""
+
+## Projects face_center_world into room's wall UV frame and checks whether any
+## door opening in door_list intersects the face rectangle. Returns OPEN if yes.
+## UV conventions match _build_wall() and _doorway_world_pos():
+##   north/south: bu=RIGHT(+X), bv=UP  →  u = face.x - room.position.x
+##   east/west:   bu=FORWARD(-Z), bv=UP →  u = room.position.z - face.z
+func _wall_open_status(room: Room3D, side: String,
+		face_center_world: Vector3, face_width: float, face_height: float) -> ConnectionInfo.Status:
+	var wall_cfg := room.cfg(side)
+	if wall_cfg == null or not wall_cfg.enabled:
+		return ConnectionInfo.Status.OPEN
+	var wall_center_y: float = room.position.y + room.size.y / 2.0
+	var u: float
+	var v: float = face_center_world.y - wall_center_y
+	match side:
+		"north", "south": u = face_center_world.x - room.position.x
+		"east",  "west":  u = room.position.z - face_center_world.z
+		_: return ConnectionInfo.Status.BLOCKED
+	var face_rect := Rect2(u - face_width / 2.0, v - face_height / 2.0, face_width, face_height)
+	for d: DoorEntry in room.door_list:
+		if d.side != side: continue
+		var door_rect := Rect2(d.center_u - d.width / 2.0, d.center_v - d.height / 2.0, d.width, d.height)
+		if face_rect.intersects(door_rect):
+			return ConnectionInfo.Status.OPEN
+	return ConnectionInfo.Status.BLOCKED

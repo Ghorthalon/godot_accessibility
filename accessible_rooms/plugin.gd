@@ -33,6 +33,8 @@ func _enter_tree():
         preload("res://addons/accessible_rooms/room_3d.gd"), null)
     add_custom_type("Ramp3D", "Node3D",
         preload("res://addons/accessible_rooms/ramp_3d.gd"), null)
+    add_custom_type("Stairs3D", "Node3D",
+        preload("res://addons/accessible_rooms/stairs_3d.gd"), null)
     _audio_debugger = AudioPreviewDebugger.new()
     add_debugger_plugin(_audio_debugger)
 
@@ -49,5 +51,6 @@ func _exit_tree():
     dock.queue_free()
     remove_custom_type("Room3D")
     remove_custom_type("Ramp3D")
+    remove_custom_type("Stairs3D")
     remove_debugger_plugin(_audio_debugger)
     remove_autoload_singleton(_AUTOLOAD_NAME)

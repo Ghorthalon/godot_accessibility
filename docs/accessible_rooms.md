@@ -1,6 +1,6 @@
 # accessible_rooms
 
-accessible_rooms is a Godot addon which helps blind devs create and manage 3d scenes. It let's you place rooms, ramps, stairs, nodes, scenes and move them around. You get spoken information through your screen reader for all operations, which tell you what happened, and why. It also plays sounds depending on what you're doing. For example, while moving around using it's cursor, it plays a sound at the center of any object that you're currently in, so you can immediately know exactly where you are in relation to the exact center of the entity. 
+accessible_rooms is a Godot addon which helps blind devs create and manage 3d scenes. It let's you place rooms, ramps, stairs, nodes, scenes and move them around. You get spoken information through your screen reader for all operations, which tell you what happened, and why. It also plays sounds depending on what you're doing. For example, while moving around using its cursor, it plays a sound at the center of any object that you're currently in, so you can immediately know exactly where you are in relation to the exact center of the entity. 
 
 ## Concepts
 
@@ -10,7 +10,7 @@ This leads to very basic but workable geometry. It is very rectangular, right no
 
 ### Rooms
 
-The most often used building block is the room. A room is a rectangular entity which has a floor, and optionally walls and ceiling. You set the width, height and depth, move the cursor to the center of where you want the room to exist, and place it. Alternatively, you create a selection using the cursor, and then place a room from selection, which fills the entire selection with the room. SO the floor is at the bottom part of the selection, the ceiling is at the top part of the selection, and the walls surround the selection.
+The most often used building block is the room. A room is a rectangular entity which has a floor, and optionally walls and ceiling. You set the width, height and depth, move the cursor to the center of where you want the room to exist, and place it. Alternatively, you create a selection using the cursor, and then place a room from selection, which fills the entire selection with the room. so the floor is at the bottom part of the selection, the ceiling is at the top part of the selection, and the walls surround the selection.
 
 ### Ramps
 
@@ -33,7 +33,7 @@ I will go through each part of the UI and explain what it does. By the end of th
 
 #### Global controls
 
-* Use selected node as parent: this will change the root node that the addon uses for all of it's operations. For example, if you're editing a level but want all of it's nodes to go into a specific node, you would toggle this on. If you have this off, it will do all of it's operations on the root node of the current scene you have open.
+* Use selected node as parent: this will change the root node that the addon uses for all of its operations. For example, if you're editing a level but want all of it's nodes to go into a specific node, you would toggle this on. If you have this off, it will do all of it's operations on the root node of the current scene you have open.
 * Move cursor to selected object: If you use any of the lists inside the addon to select a different room, in any of the tabs we will get to shortly, or by moving inside the scene tree, this will automatically move the cursor to the entity you have selected, whether that's a room, ramp, or any node3d or subclass of node3d at all in the scene tree.
 
 #### Rooms tab
@@ -60,14 +60,14 @@ This is where you create rooms.
 * Refresh entity list: This will rescan the scene tree manually. If your room list is empty but you know you have nodes, this will fix it.
 * Bake scene: this takes all of the addon created rooms, ramps, and other geometry, and compiles it into plain Godot nodes instead. It also merges the geometry into single meshes where possible, while keeping any custom data you might have entered for surfaces and so on. This will improve performance a lot especially for larger worlds. This also allows you to place scripts and such on your room geometry yourself, as before all of this would be taken up by the addon's scripts instead and you would need to subclass from the addon's authoring scripts. There are two buttons. One of them will replace your current scene, so it will delete the nodes within it and replace them with the baked versions. The other one will bake it to a new scene. This is recommended. I usually have a dev scene which I exclude from being shipped, which is where I do all my editing. I then save it to a world baked scene when it's time to ship or I'm actually done with the environment. I always keep them around however in case I need to make edits.
 * Resize anchor:
-    * NW, N, NE, E, SE, S, SW, W: When you resize a room, the room will usually be resized from it's center. This is probelmatic if you already have rooms connecting to other rooms, because they will be pulled away from the connecting room as they shrink inward. These anchors will let you set from which point the room will grow or shrink. For example, if you set the anchor to NE, then the northeast corner will stay exactly where it is, and the room will shrink inward, or grow outward, from the most northeastern point. Similarly, if you set this to south, then the room will grow and shrink towards the top and sides, while the southern edge remains exactly where it is.
+    * NW, N, NE, E, SE, S, SW, W: When you resize a room, the room will usually be resized from it's center. This is problematic if you already have rooms connecting to other rooms, because they will be pulled away from the connecting room as they shrink inward. These anchors will let you set from which point the room will grow or shrink. For example, if you set the anchor to NE, then the northeast corner will stay exactly where it is, and the room will shrink inward, or grow outward, from the most northeastern point. Similarly, if you set this to south, then the room will grow and shrink towards the top and sides, while the southern edge remains exactly where it is.
     * Smart anchor: This will scan the room to figure out which sides are connected to sides of other surrounding spatial entities, and set the smart anchor to those. If you have something already built, this is usually what you want. This way, it will only shrink or grow the the room in the direction which does not have something on that side, while keeping the sides which do connect to something untouched.
 * Cascade: When you resize a room, this option will make sure to move every other room which is in the way as well so that the room can be resized. It will check any room which is connected to the current one, and every room connected to those, until no more rooms are connected. Then it will push everything out of the way so the resize can happen while still keeping everything connected.
 * W, H, D: If you have a room selected in the list, these 3 spin boxes will let you set the size to resize the room for. If you do not have a room selected, these boxes are disabled. 
 * Apply changes: This will actually perform the room resize
 * Measure space at cursor: This will scan the surrounding geometry and tell you how much free space you have in any direction.
 * Resize:
-    * Resize room to fill E-.W, resize room to fill N->S: These two controls will measure the current free space at the cursor and expand the room you have selected to fill it. This is useful if you have two rooms which are currently not ocnnected, but want to connect them using another room, hallway, etc.
+    * Resize room to fill E->W, resize room to fill N->S: These two controls will measure the current free space at the cursor and expand the room you have selected to fill it. This is useful if you have two rooms which are currently not connected, but want to connect them using another room, hallway, etc.
 * Doorway list: This will show you each hole / doorway that is currently present in the room. This will look something like: [0] east  U:5.00 V:-1.25  2.0×2.5m. This means: 0 is the index, U is the horizontal position along the wall from left to right, V is the vertical position along the wall from top to bottom, and the size. The wall local coordinates start in the middle of the wall, so the exact center middle is 0,0.
 * If you have a door selected, the next fields are:
     * Name: A name for the doorway, useful for keeping track of many of them in one room
@@ -77,7 +77,7 @@ This is where you create rooms.
     * w: The width of the door
     * h: The height of the door
     * Apply door changes: This will reconfigure the door using the values you have set here. Again, keep in mind that the horizontal, vertical, width and height are wall local. This means that the width will always be along the wall, no matter which direction the wall is facing. If you set a 2m wide doorway, the doorway will always face through the wall. It is impossible to create a doorway which faces the wrong way.
-    * remove selected door: This will remove the door you have selected here and will it with wall.
+    * remove selected door: This will remove the door you have selected here and will fill it with wall.
 * Walls on selected room: This is a list of all of the walls that this room is made up of. You have all of the cardinal directions, as well as floor and ceiling. This is where you can set the surface metadata which is written to each object, and disable any of the individual walls, floor, or ceiling.
     * enabled: Whether this wall is constructed or not.
     * Surface: The surface string which is available on get_meta("surface") on the object. Useful for things like footsteps. 
@@ -113,8 +113,8 @@ These are basically the same as ramps, except they're not smooth and have actual
 * Build ceiling: Whether these stairs will need a ceiling.
 * Build risers: Whether to build risers for these stairs.
 * connecting doorway:
-    * w: The width of the doorway ot create if these stairs are added to any side of a room
-    * h: The height of the doorway ot create if these stairs are added to any side of a room
+    * w: The width of the doorway to create if these stairs are added to any side of a room
+    * h: The height of the doorway to create if these stairs are added to any side of a room
 * Standalone stairs high end: The same as ramps. When placing a standalone stairs, which direction should they go?
 * The next couple of buttons mirror rooms and ramps exactly.
 
@@ -126,7 +126,7 @@ The cursor can be moved in 3d space to examine what's around. This is a very use
 * Move west, east, north, south, up, down: Move the cursor in that direction.
 * Snap cursor to current room: Snaps the cursor to the middle of the current room you're in.
 * Probe distances: Will scan around the cursor to determine how much free space you have around. This will also play sounds at exactly where the collisions occur, so you can audibly hear the size of free space.
-* Report cursor location: Will announce the current cursor position, and any ocntextual information such as if you're within a room, object, or similar.
+* Report cursor location: Will announce the current cursor position, and any contextual information such as if you're within a room, object, or similar.
 * Snap cursor to geometry:
     * floor: Snap the cursor to the floor of the current room.
     * north, south, east, west: Snap the cursor to the north, south, east or west wall of the current room.
@@ -189,7 +189,7 @@ This tab allows you to move objects in a physics aware manner.
 * Report position: This reports the center / origin position of the object selected in the scene tree.
 * Measure distances: This measures the distance to the next objects in all 6 directions from the objects, and plays audio at the spots where objects are hit.
 * Move to cursor: This allows you to move the object to the cursor.
-    * Check if cursor is clear: This checks if you can actually move the object to the cursor. It takes any overlaps, collisions, etc. into consideration and tells youwhether the object will fit where you have the cursor.
+    * Check if cursor is clear: This checks if you can actually move the object to the cursor. It takes any overlaps, collisions, etc. into consideration and tells you whether the object will fit where you have the cursor.
     * Move to cursor: This will move the object to the cursor location. If the object fits, pressing this button will simply move the object. If the object does not fit, it will give you a warning. If you still want to move the object even though it might not fit, you can hold shift and press this button, which will force the move to happen regardless. Keep in mind that this will lodge the object in any blocking geometry, so funny physics issues might occur if you set this up wrong.
 * Nudge, collision aware:
     * distance: The distance to nudge the object by

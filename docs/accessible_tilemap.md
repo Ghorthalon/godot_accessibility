@@ -4,7 +4,7 @@ This is an addon which attempts to make Tilemap editing accessible in Godot. It 
 
 ## How to use this addon
 
-This addon will place itself in the bottom dock, where other tilemap layer editor plugins typically go. Select a tilemap layer node or resource, and it will show. can use the [GMap Hotkeys script](https://github.com/ericrbomb/unseengodot) to focus is directly using a shortcut, or find it by tabbing past the main view of the editor, for example, the accessible_rooms view, script editor, or any other main view that might be enabled. You can also focus the signals panel and shift tab to find the bottom dock tab bar, then right or left arrow until you hear accessible tilemap.
+This addon will place itself in the bottom dock, where other tilemap layer editor plugins typically go. Select a tilemap layer node or resource, and it will show. You can use the [GMap Hotkeys script](https://github.com/ericrbomb/unseengodot) to focus is directly using a shortcut, or find it by tabbing past the main view of the editor, for example, the accessible_rooms view, script editor, or any other main view that might be enabled. You can also focus the signals panel and shift tab to find the bottom dock tab bar, then right or left arrow until you hear accessible tilemap.
 
 ## UI
 
@@ -42,9 +42,9 @@ This is the fun part. After you've set up your tiles in the Atlas tab, this is w
 
 The editor will let you edit any tilemap layer in your scene. If this tab says no scene open but you're sure you do have one, press refresh. This will scan the scene for the tilemap layer and select it. If you have multiple, you can select which one you want to edit from that dropdown.
 
-The pallet tile is the tile you will be painting. This is a list of all the tiles you defined in the Atlas tab for the current tilemap layer.
+The palette tile is the tile you will be painting. This is a list of all the tiles you defined in the Atlas tab for the current tilemap layer.
 
-Shift arrow step size let's you adjust how far each shift+arrow press will move the cursor. More on this below.
+Shift arrow step size lets you adjust how far each shift+arrow press will move the cursor. More on this below.
 
 Grid: This is the actual editor. This is where you can begin to use keyboard shortcuts to start painting your tiles.
 

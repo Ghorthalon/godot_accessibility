@@ -14,7 +14,7 @@ Active animation: This is the active animation to edit. An animation player can 
 
 New animation: This allows you to add a new animation. After creating it, it will be automatically selected, and also show up in the list above.
 
-Delete animation: This allows you to delete an animatino from the animation list.
+Delete animation: This allows you to delete an animation from the animation list.
 
 Animation length: The amount in seconds for how long this animation should play for.
 
@@ -26,7 +26,7 @@ Stop animation: Will stop the animation if it is currently playing.
 
 Seek: This allows you to move the cursor manually to any time you enter here.
 
-Animationt rack list: This is the list of tracks currently in the animation. It will tell you the track number, what kind of animation it is, what value is being animated, and how many key frames exist. A key is basically an automation point at which a value should reach a specific point, or a method will be called, audio will be played, etc.
+Animation track list: This is the list of tracks currently in the animation. It will tell you the track number, what kind of animation it is, what value is being animated, and how many key frames exist. A key is basically an automation point at which a value should reach a specific point, or a method will be called, audio will be played, etc.
 
 Add track: Creates a new track. This will open a dialog with options for the new track:
 

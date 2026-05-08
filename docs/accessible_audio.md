@@ -22,6 +22,6 @@ The second tab is the effects tab. This will list all of the effects that are as
 
 Then you have controls to select a new type of effect to add, or remove the effect you have selected in the list. Then you have a bypass button to enable or disable the effect you have selected. Move up and down moves the currently selected effect up or down in the list. This is actually useful, since effects apply in order, so you can select whether a sound gets distorted before going into reverb, or whether the reverb itself should be distorted, as an example. 
 
-After that are a whoel bunch of controls depending on the effect you have selected here. You can adjust the properties of all effects accessibly.
+After that are a whole bunch of controls depending on the effect you have selected here. You can adjust the properties of all effects accessibly.
 
 That's it. It's a very simple plugin but I hope it is still useful. If you have any suggestions, issues, or anything else, either open an issue here, start a discussion, or come find me on the [Unseen Godot Discord Server](https://discord.gg/RmWNjcgHKx)

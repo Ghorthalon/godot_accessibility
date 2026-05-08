@@ -1,3 +1,5 @@
+# Godot Accessibility Playground
+
 This repository contains plugins to help with some things inside the Godot editor which are currently not accessible, namely the 2d and 3d editors.
 
 The 2d editor is in accessible_tilemap.

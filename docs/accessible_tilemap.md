@@ -28,13 +28,14 @@ Custom data layers list: This is where you can assign custom data for the tilese
 
 Physics layer list: This is the physics layer list that you can assign to each tile. Note that this only affects the tileset, and not the tilemap layer node. You can assign each physics layer you have here to a physics layer in Godot. They are separate, so you have to wire this up manually yourself in the Tilemap Layer's inspector. Each tileset's physics layer will show up in the inspector, and you can select which physics layer in Godot this will be mapped to. For more info about physics layers, please do read the Godot documentation. You have buttons to add a new physics layer here, or remove the selected one. Different layers are useful if you want only specific entities to be able to collide with specific tiles. 
 
-Tileset source: This is the tileset source that you want to add and remove tiles to. This is an option button which will tell you how many tiles are defined on each source. You must have at least one atlas source to be able to assign any tiles to the atlas. There are buttons to add one or remove the selected one.
+Tileset source: This is the tileset source that you want to add and remove tiles to. This is an option button which will tell you how many tiles are defined on each source. You must have at least one atlas source to be able to assign any tiles to the atlas. There are buttons to add an atlas source, or a scene collection source, or remove the selected one.
 
-Tile list: This is the list of tiles defined on the current tileset and source. It will tell you the name of the tile, and where it is in the atlas. If you use the addon to programatically create this, the tiles will go from left to right in the tilesheet in a single row. If you use an existing tilesheet, it will tell you the exact coordinates at which the tile is defined in the sheet. Again, you have buttons to add a new tile here or remove it. Pressing add will ask you for it's name and then create it. You can also add a scene, if you have a scene source selected for your atlas source. This is more advanced and gives you more control over what a tile actually is in your scene.
+
+Tile list: This is the list of tiles defined on the current tileset and source. It will tell you the name of the tile, and where it is in the atlas. If you use the addon to programatically create this, the tiles will go from left to right in the tilesheet in a single row. If you use an existing tilesheet, it will tell you the exact coordinates at which the tile is defined in the sheet. Again, you have buttons to add a new tile here or remove it. Pressing add will ask you for it's name and then create it. You can also add a scene, if you have a scene collection source selected and not an atlas source. This is more advanced and gives you more control over what a tile actually is in your scene.
 
 After this are the information about the current tile. You can enter a name here, and you can check whether this tile is solid or not, so whether it has collision you can assign in the tilemap layer node.
 
-So to recap: If you want tilemaps in your game, your scene must have at least one Tilemap Layer node. This Tilemap Layer must have a tileset assigned to it. A tileset has multiple properties, for example custom data layers for things such as names, damage values for tiles that do damage, etc. as well as physics layers which you can map to physics layers within Godot's physics system. Each tileset has a source. This source defines what tiles you have in your tilesheet, where they are, and whether they have collision or not. These tiles can be defined purely inline, or as a scene. This sounds confusing, but it gives you a lot of power.
+So to recap: If you want tilemaps in your game, your scene must have at least one Tilemap Layer node. This Tilemap Layer must have a tileset assigned to it. A tileset has multiple properties, for example custom data layers for things such as names, damage values for tiles that do damage, etc. as well as physics layers which you can map to physics layers within Godot's physics system. Each tileset has a source. This source defines what tiles you have in your tilesheet, where they are, and whether they have collision or not. These tiles can be defined purely inline on an atlas source, or as scenes in a scene collection source. This sounds confusing, but it gives you a lot of power.
 
 ### Map tab
 
@@ -66,6 +67,10 @@ The following keyboard shortcuts work here:
 * w: Reads information about which tiles are at the cursor's position across all layers.
 * b: Reads the map bounds that currently have tiles painted in it.
 
+
+## Spatial tab
+
+This is not related to tilemaps, but it tries to present your nodes in the current scene spatially. So you can navigate them in relation to other nodes. However this is fairly untested. I would recommend skipping this for now, and using [Eric's unseen grid scene](https://github.com/ericrbomb/unseengodot) instead. 
 
 ## WIP
 

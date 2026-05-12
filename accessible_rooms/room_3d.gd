@@ -20,9 +20,6 @@ const NORMALS := {
 @export var rebuild_now:  bool = false: set = _trigger
 @export var door_list: Array[DoorEntry] = []
 
-var _rebuild_queued := false
-var _rebuild_gen := 0
-
 func _set_size(v):  size = v;                                   _queue_rebuild()
 func _set_n(v):    _rewire(wall_north,   v); wall_north = v;   _queue_rebuild()
 func _set_s(v):    _rewire(wall_south,   v); wall_south = v;   _queue_rebuild()
@@ -73,12 +70,6 @@ func cfg(side: String) -> WallConfig:
 		"ceiling": return wall_ceiling
 	return null
 
-func _queue_rebuild() -> void:
-	if is_inside_tree() and not _rebuild_queued:
-		_rebuild_queued = true
-		_rebuild_gen += 1
-		call_deferred("rebuild")
-
 func _sync_doors_to_openings() -> void:
 	for s in SIDES:
 		cfg(s).openings.clear()
@@ -95,7 +86,7 @@ func rebuild() -> void:
 		if c.has_meta("generated") or c.has_meta("room_area"): c.queue_free()
 	if not is_inside_tree(): return
 	await get_tree().process_frame
-	if _rebuild_gen != my_gen: return
+	if _check_rebuild_stale(my_gen): return
 	for side in SIDES:
 		var wall_cfg := cfg(side)
 		if wall_cfg == null or not wall_cfg.enabled: continue
@@ -129,15 +120,22 @@ func _build_wall(side: String) -> void:
 			basis_u = Vector3.FORWARD; basis_v = Vector3.UP
 
 	var rects := _slice([Rect2(-u/2, -v/2, u, v)], wall_cfg.openings + _get_overlap_suppressions(side))
+	var normal := basis_u.cross(basis_v).normalized()
 	for i in rects.size():
-		_spawn_quad(side, wall_cfg.surface, center, basis_u, basis_v, rects[i], i)
+		var r: Rect2 = rects[i]
+		var box_sz := Vector3(r.size.x, r.size.y, WALL_THICKNESS)
+		var origin := center + basis_u * (r.position.x + r.size.x / 2.0) + basis_v * (r.position.y + r.size.y / 2.0)
+		_spawn_box(self, "%s_%d" % [side, i], Transform3D(Basis(basis_u, basis_v, normal), origin), box_sz, wall_cfg.surface)
 
 	# Zone overlays: offset slightly along the wall normal to prevent z-fighting.
 	var zone_off: Vector3 = NORMALS[side] * EPSILON
 	for i in wall_cfg.zones.size():
 		var zone: Dictionary = wall_cfg.zones[i]
-		_spawn_quad(side, zone.get("surface", "concrete"),
-				center + zone_off, basis_u, basis_v, zone["rect"], rects.size() + i)
+		var r: Rect2 = zone["rect"]
+		var zone_center := center + zone_off
+		var box_sz := Vector3(r.size.x, r.size.y, WALL_THICKNESS)
+		var origin := zone_center + basis_u * (r.position.x + r.size.x / 2.0) + basis_v * (r.position.y + r.size.y / 2.0)
+		_spawn_box(self, "%s_zone_%d" % [side, i], Transform3D(Basis(basis_u, basis_v, normal), origin), box_sz, zone.get("surface", "concrete"))
 
 static func _wall_plane_coord(room: Room3D, side: String) -> float:
 	match side:
@@ -207,32 +205,6 @@ func _slice(rects: Array, openings: Array) -> Array:
 		rects = out
 	return rects
 
-func _spawn_quad(side: String, surface: String, center: Vector3, bu: Vector3, bv: Vector3, r: Rect2, idx: int) -> void:
-	var body := StaticBody3D.new()
-	body.set_meta("generated", true)
-	body.set_meta("surface", surface)
-	body.name = "%s_%d" % [side, idx]
-	var thickness := WALL_THICKNESS
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(r.size.x, r.size.y, thickness)
-	mi.mesh = bm
-	var cs := CollisionShape3D.new()
-	var bs := BoxShape3D.new()
-	bs.size = bm.size
-	cs.shape = bs
-	body.add_child(mi); body.add_child(cs)
-	add_child(body)
-	# Orient: local Z of the quad aligns with the wall normal.
-	var normal := bu.cross(bv).normalized()
-	var t := Transform3D()
-	t.basis = Basis(bu, bv, normal)
-	t.origin = center + bu * (r.position.x + r.size.x/2) + bv * (r.position.y + r.size.y/2)
-	body.transform = t
-	var root := get_tree().edited_scene_root
-	if root:
-		for n in [body, mi, cs]: n.owner = root
-
 func _build_room_area() -> void:
 	var area := Area3D.new()
 	area.set_meta("room_area", true)
@@ -286,8 +258,7 @@ func neighbor_offset(side: String, other_size: Vector3) -> Vector3:
 	return Vector3.ZERO
 
 func neighbor_doorway_side(side: String) -> String:
-	var opp := {"north": "south", "south": "north", "east": "west", "west": "east"}
-	return opp.get(side, "")
+	return CardinalDir.opposite(side)
 
 func has_wall(_side: String) -> bool:
 	return true
@@ -322,7 +293,7 @@ func punch_doorway(side: String, width := 1.2, height := 2.1) -> void:
 	add_doorway(side, 0.0, -size.y / 2.0 + height / 2.0, width, height)
 
 func punch_hole(side: String, center_u: float, center_v: float, width := 0.9, height := 0.9) -> void:
-	## Appends a hole centred at (center_u, center_v) in wall-local metres. Suitable for windows.
+	## Appends a hole centred at (center_u, center_v) in wall local metres. Suitable for windows.
 	add_doorway(side, center_u, center_v, width, height)
 
 func add_doorway(side: String, center_u: float, center_v: float, width := 1.2, height := 2.1, label := "") -> void:

@@ -26,76 +26,29 @@ var _resize_conflict_label: Label
 var _connection_container: VBoxContainer
 
 func _ready() -> void:
-	var nl := Label.new(); nl.text = "New room size (m):"
-	add_child(nl)
-	new_w = _spinbox(1.0, 200.0, 1.0, 6.0)
-	new_h = _spinbox(1.0, 100.0, 0.5, 3.0)
-	new_d = _spinbox(1.0, 200.0, 1.0, 6.0)
-	var nr := HBoxContainer.new()
-	for pair in [["W:", new_w], ["H:", new_h], ["D:", new_d]]:
-		var lbl := Label.new(); lbl.text = pair[0]
-		nr.add_child(lbl); nr.add_child(pair[1])
-	add_child(nr)
-	var surface_row := HBoxContainer.new()
-	build_walls = CheckBox.new()
-	build_walls.text = "Build walls"
-	build_walls.button_pressed = true
-	build_ceiling = CheckBox.new()
-	build_ceiling.text = "Build ceiling"
-	build_ceiling.button_pressed = true
-	surface_row.add_child(build_walls)
-	surface_row.add_child(build_ceiling)
-	add_child(surface_row)
+	var tabs := TabContainer.new()
+	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	add_child(tabs)
 
-	add_child(HSeparator.new())
-	var dl := Label.new(); dl.text = "Doorway size (m):"
-	add_child(dl)
-	door_w = _spinbox(0.5, 20.0, 0.1, 1.2)
-	door_h = _spinbox(0.5, 20.0, 0.1, 2.5)
-	var dr := HBoxContainer.new()
-	for pair in [["W:", door_w], ["H:", door_h]]:
-		var lbl := Label.new(); lbl.text = pair[0]
-		dr.add_child(lbl); dr.add_child(pair[1])
-	add_child(dr)
-	create_door_placeholder = CheckBox.new()
-	create_door_placeholder.text = "Create door placeholder at new doorways"
-	create_door_placeholder.button_pressed = true
-	add_child(create_door_placeholder)
-	add_child(HSeparator.new())
-
-	_btn("New standalone room", _new_root_room)
-
-	add_child(HSeparator.new())
-	var cc_lbl := Label.new(); cc_lbl.text = "Corner-to-corner room:"
-	add_child(cc_lbl)
-	_btn("Place room from corners", _place_room_from_corners)
-
-	add_child(HSeparator.new())
-	for side in ["north", "south", "east", "west"]:
-		_btn("Add room to %s of current" % side, _add_neighbor.bind(side))
-		_btn("Punch doorway %s on current" % side, _punch.bind(side))
-	_btn("Punch door at cursor (on nearest wall)", _punch_at_cursor)
-	_btn("Punch hole at cursor (on nearest wall)", _punch_hole_at_cursor)
-
-	add_child(HSeparator.new())
+	# SUBTAB: Rooms
+	var rooms_tab := VBoxContainer.new()
+	rooms_tab.name = "Rooms"
+	tabs.add_child(rooms_tab)
 
 	room_list = ItemList.new()
 	room_list.custom_minimum_size = Vector2(0, 200)
 	room_list.item_selected.connect(_on_select)
-	add_child(room_list)
-	_btn("Refresh entity list", _refresh)
-	add_child(HSeparator.new())
-	_btn("Bake scene (replace spatial entities with plain nodes)", _bake_scene)
-	_btn("Bake scene to file...", _open_bake_to_file_dialog)
+	rooms_tab.add_child(room_list)
+	_btn_into(rooms_tab, "Refresh entity list", _refresh)
 
-	add_child(HSeparator.new())
+	rooms_tab.add_child(HSeparator.new())
+
 	var rl := Label.new(); rl.text = "Edit selected entity:"
-	add_child(rl)
-	_build_anchor_ui()
-	# Dynamic resize container, populated by entity.populate_properties_ui().
+	rooms_tab.add_child(rl)
+	_build_anchor_ui_into(rooms_tab)
 	_resize_container = VBoxContainer.new()
-	add_child(_resize_container)
-	_btn("Apply changes", _apply_resize)
+	rooms_tab.add_child(_resize_container)
+	_btn_into(rooms_tab, "Apply changes", _apply_resize)
 	_resize_conflict_bar = HBoxContainer.new()
 	_resize_conflict_bar.visible = false
 	_resize_conflict_label = Label.new()
@@ -107,46 +60,107 @@ func _ready() -> void:
 	_cancel_btn.pressed.connect(_on_resize_cancel)
 	_resize_conflict_bar.add_child(_proceed_btn)
 	_resize_conflict_bar.add_child(_cancel_btn)
-	add_child(_resize_conflict_bar)
-	add_child(HSeparator.new())
-	_btn("Measure space at cursor", _measure_space_at_cursor)
-	_btn("Resize room to fill E\u2194W", _resize_fill_ew)
-	_btn("Resize room to fill N\u2194S", _resize_fill_ns)
+	rooms_tab.add_child(_resize_conflict_bar)
+	_btn_into(rooms_tab, "Measure space at cursor", _measure_space_at_cursor)
+	_btn_into(rooms_tab, "Resize room to fill E\u2194W", _resize_fill_ew)
+	_btn_into(rooms_tab, "Resize room to fill N\u2194S", _resize_fill_ns)
 
-	add_child(HSeparator.new())
+	rooms_tab.add_child(HSeparator.new())
+
+	var nl := Label.new(); nl.text = "New room size (m):"
+	rooms_tab.add_child(nl)
+	new_w = _spinbox(1.0, 200.0, 1.0, 6.0)
+	new_h = _spinbox(1.0, 100.0, 0.5, 3.0)
+	new_d = _spinbox(1.0, 200.0, 1.0, 6.0)
+	var nr := HBoxContainer.new()
+	for pair in [["W:", new_w], ["H:", new_h], ["D:", new_d]]:
+		var lbl := Label.new(); lbl.text = pair[0]
+		nr.add_child(lbl); nr.add_child(pair[1])
+	rooms_tab.add_child(nr)
+	var surface_row := HBoxContainer.new()
+	build_walls = CheckBox.new()
+	build_walls.text = "Build walls"
+	build_walls.button_pressed = true
+	build_ceiling = CheckBox.new()
+	build_ceiling.text = "Build ceiling"
+	build_ceiling.button_pressed = true
+	surface_row.add_child(build_walls)
+	surface_row.add_child(build_ceiling)
+	rooms_tab.add_child(surface_row)
+	_btn_into(rooms_tab, "New standalone room", _new_root_room)
+	var cc_lbl := Label.new(); cc_lbl.text = "Corner-to-corner room:"
+	rooms_tab.add_child(cc_lbl)
+	_btn_into(rooms_tab, "Place room from corners", _place_room_from_corners)
+	rooms_tab.add_child(HSeparator.new())
+	for side in ["north", "south", "east", "west"]:
+		_btn_into(rooms_tab, "Add room to %s of current" % side, _add_neighbor.bind(side))
+
+	# SUBTAB: Doors & Walls
+	var dw_tab := VBoxContainer.new()
+	dw_tab.name = "Doors & Walls"
+	tabs.add_child(dw_tab)
+
+	var dl := Label.new(); dl.text = "Doorway size (m):"
+	dw_tab.add_child(dl)
+	door_w = _spinbox(0.5, 20.0, 0.1, 1.2)
+	door_h = _spinbox(0.5, 20.0, 0.1, 2.5)
+	var dr := HBoxContainer.new()
+	for pair in [["W:", door_w], ["H:", door_h]]:
+		var lbl := Label.new(); lbl.text = pair[0]
+		dr.add_child(lbl); dr.add_child(pair[1])
+	dw_tab.add_child(dr)
+	create_door_placeholder = CheckBox.new()
+	create_door_placeholder.text = "Create door placeholder at new doorways"
+	create_door_placeholder.button_pressed = true
+	dw_tab.add_child(create_door_placeholder)
+	_btn_into(dw_tab, "Punch door at cursor (on nearest wall)", _punch_at_cursor)
+	_btn_into(dw_tab, "Punch hole at cursor (on nearest wall)", _punch_hole_at_cursor)
+	for side in ["north", "south", "east", "west"]:
+		_btn_into(dw_tab, "Punch doorway %s on current" % side, _punch.bind(side))
+
+	dw_tab.add_child(HSeparator.new())
+
 	var door_lbl := Label.new(); door_lbl.text = "Doors on selected room:"
-	add_child(door_lbl)
+	dw_tab.add_child(door_lbl)
 	_door_item_list = ItemList.new()
 	_door_item_list.custom_minimum_size = Vector2(0, 100)
 	_door_item_list.item_selected.connect(_on_door_select)
-	add_child(_door_item_list)
-	add_child(HSeparator.new())
-	var door_edit_lbl := Label.new(); door_edit_lbl.text = "Edit selected door:"
-	add_child(door_edit_lbl)
+	dw_tab.add_child(_door_item_list)
 	_door_props_container = VBoxContainer.new()
-	add_child(_door_props_container)
-	_btn("Apply door changes", _apply_door_changes)
-	_btn("Remove selected door", _remove_selected_door)
+	dw_tab.add_child(_door_props_container)
+	_btn_into(dw_tab, "Apply door changes", _apply_door_changes)
+	_btn_into(dw_tab, "Remove selected door", _remove_selected_door)
 
-	add_child(HSeparator.new())
+	dw_tab.add_child(HSeparator.new())
+
 	var wall_lbl := Label.new(); wall_lbl.text = "Walls on selected room:"
-	add_child(wall_lbl)
+	dw_tab.add_child(wall_lbl)
 	_wall_item_list = ItemList.new()
 	_wall_item_list.custom_minimum_size = Vector2(0, 100)
 	_wall_item_list.item_selected.connect(_on_wall_select)
-	add_child(_wall_item_list)
-	add_child(HSeparator.new())
-	var wall_edit_lbl := Label.new(); wall_edit_lbl.text = "Edit selected wall:"
-	add_child(wall_edit_lbl)
+	dw_tab.add_child(_wall_item_list)
 	_wall_props_container = VBoxContainer.new()
-	add_child(_wall_props_container)
-	_btn("Apply wall changes", _apply_wall_changes)
+	dw_tab.add_child(_wall_props_container)
+	_btn_into(dw_tab, "Apply wall changes", _apply_wall_changes)
 
-	add_child(HSeparator.new())
+	dw_tab.add_child(HSeparator.new())
+
 	var conn_hdr := Label.new(); conn_hdr.text = "Connections:"
-	add_child(conn_hdr)
+	dw_tab.add_child(conn_hdr)
 	_connection_container = VBoxContainer.new()
-	add_child(_connection_container)
+	dw_tab.add_child(_connection_container)
+
+	# SUBTAB: Bake
+	var bake_tab := VBoxContainer.new()
+	bake_tab.name = "Bake"
+	tabs.add_child(bake_tab)
+
+	var bake_lbl := Label.new()
+	bake_lbl.text = "Merges all spatial entities into optimised static meshes.\nIn-place modifies the current scene; Bake to file saves a copy."
+	bake_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	bake_tab.add_child(bake_lbl)
+	_btn_into(bake_tab, "Bake to scene (in place)", _bake_scene)
+	_btn_into(bake_tab, "Bake to file\u2026", _open_bake_to_file_dialog)
 
 	_refresh()
 
@@ -167,7 +181,7 @@ func _new_root_room() -> void:
 	r.size = size
 	r.position = dock.cursor
 	_apply_surface_settings(r)
-	root.add_child(r); r.owner = root; r.rebuild()
+	root.add_child(r); r.owner = dock.scene_query.edited_root(); r.rebuild()
 	dock.current_entity = r
 	_refresh()
 	dock._say_ok("Created %s, %.1f by %.1f by %.1f meters." % [r.name, r.size.x, r.size.y, r.size.z])
@@ -191,7 +205,7 @@ func _place_room_from_corners() -> void:
 	r.size = size
 	r.position = pos
 	_apply_surface_settings(r)
-	root.add_child(r); r.owner = root; r.rebuild()
+	root.add_child(r); r.owner = dock.scene_query.edited_root(); r.rebuild()
 	dock.current_entity = r
 	_refresh()
 	dock._say_ok("Created %s, %.1f by %.1f by %.1f meters." % [r.name, r.size.x, r.size.y, r.size.z])
@@ -232,11 +246,11 @@ func _add_neighbor(side: String) -> void:
 		r.add_doorway(back_side, 0.0, cv_new, door_w.value, door_h.value)
 	_apply_surface_settings(r)
 
-	root.add_child(r); r.owner = root
+	root.add_child(r); r.owner = dock.scene_query.edited_root()
 	r.position = new_pos
 	r.rebuild()   # single rebuild, config fully set, not in tree when add_doorway was called
 
-	# Placeholder for new room's backside doorway (room is now in tree, global_position valid).
+	# Placeholder for new room's backside doorway
 	if back_side != "":
 		_make_door_placeholder(r, back_side, 0.0, cv_new, door_w.value, door_h.value)
 
@@ -262,8 +276,8 @@ func _punch(side: String) -> void:
 
 func _make_door_placeholder(room: Room3D, side: String, cu: float, cv: float, w: float, h: float) -> void:
 	if not create_door_placeholder.button_pressed: return
-	var root: Node = dock.scene_query.placement_parent()
-	if root == null: return
+	var scene_root: Node = dock.scene_query.edited_root()
+	if scene_root == null: return
 	var world_pos: Vector3 = dock.scene_query._doorway_world_pos(room, side, cu, cv)
 	var placeholder := Node3D.new()
 	placeholder.name = "DoorPlaceholder_%s" % side
@@ -273,10 +287,10 @@ func _make_door_placeholder(room: Room3D, side: String, cu: float, cv: float, w:
 	box.size = Vector3(w, h, 0.1)
 	mesh_inst.mesh = box
 	placeholder.add_child(mesh_inst)
-	mesh_inst.owner = root
 	placeholder.position = world_pos
 	room.add_child(placeholder)
-	placeholder.owner = root
+	placeholder.owner = scene_root
+	mesh_inst.owner = scene_root
 	placeholder.visible = false
 
 func _apply_resize() -> void:
@@ -358,91 +372,15 @@ func _on_select(i: int) -> void:
 func _bake_scene() -> void:
 	var root: Node = dock.scene_query.placement_parent()
 	if root == null: dock._say("No scene open."); return
-	var entities: Array = []
+	var entities: Array[SpatialEntity3D] = []
 	for c in root.get_children():
-		if c is SpatialEntity3D:
-			entities.append(c)
+		if c is SpatialEntity3D: entities.append(c as SpatialEntity3D)
 	if entities.is_empty(): dock._say("No spatial entities found."); return
-
-	for entity in entities:
-		var original_name: String = entity.name
-		entity.name = entity.name + "__bake_temp"
-		var wrapper := Node3D.new()
-		wrapper.name = original_name
-		wrapper.transform = (entity as Node3D).transform
-		root.add_child(wrapper)
-		wrapper.owner = root
-
-		var bodies: Array[StaticBody3D] = (entity as SpatialEntity3D).generated_bodies()
-		var by_surface: Dictionary = {}
-		for body in bodies:
-			var surf: String = body.get_meta("surface", "concrete")
-			if not by_surface.has(surf): by_surface[surf] = []
-			by_surface[surf].append(body)
-
-		for child in entity.get_children():
-			if not child.has_meta("generated"):
-				entity.remove_child(child)
-				wrapper.add_child(child)
-				_set_owners_recursive(child, root)
-
-		# Merge visual neshes, one ArrayMesh per surface type.
-		for surf in by_surface:
-			var st := SurfaceTool.new()
-			st.begin(Mesh.PRIMITIVE_TRIANGLES)
-			for body in by_surface[surf]:
-				var mi: MeshInstance3D
-				for ch in body.get_children():
-					if ch is MeshInstance3D: mi = ch; break
-				if mi == null: continue
-				st.append_from(mi.mesh, 0, body.transform)
-			var merged_mi := MeshInstance3D.new()
-			merged_mi.name = original_name + "_" + surf + "_mesh"
-			merged_mi.mesh = st.commit()
-			wrapper.add_child(merged_mi)
-			merged_mi.owner = root
-
-		# Single StaticBody3D with trimesh collision for the whole entity.
-		var all_tris := PackedVector3Array()
-		for surf in by_surface:
-			for body in by_surface[surf]:
-				var mi: MeshInstance3D
-				for ch in body.get_children():
-					if ch is MeshInstance3D: mi = ch; break
-				if mi == null: continue
-				var arrays: Array = mi.mesh.surface_get_arrays(0)
-				var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-				var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-				if indices.is_empty():
-					for idx in range(0, verts.size(), 3):
-						all_tris.append(body.transform * verts[idx])
-						all_tris.append(body.transform * verts[idx + 1])
-						all_tris.append(body.transform * verts[idx + 2])
-				else:
-					for idx in range(0, indices.size(), 3):
-						all_tris.append(body.transform * verts[indices[idx]])
-						all_tris.append(body.transform * verts[indices[idx + 1]])
-						all_tris.append(body.transform * verts[indices[idx + 2]])
-
-		if all_tris.size() > 0:
-			var phys_body := StaticBody3D.new()
-			phys_body.name = "Collision"
-			var cshape := CollisionShape3D.new()
-			var trimesh := ConcavePolygonShape3D.new()
-			trimesh.set_faces(all_tris)
-			cshape.shape = trimesh
-			phys_body.add_child(cshape)
-			wrapper.add_child(phys_body)
-			phys_body.owner = root
-			cshape.owner = root
-
-		root.remove_child(entity)
-		entity.queue_free()
-
+	var count := BakeEngine.bake_in_place(entities, root)
 	dock.current_entity = null
 	_refresh()
-	dock._say_ok("Baked %d spatial entit%s with merged meshes and optimised collision." % \
-		[entities.size(), "ies" if entities.size() != 1 else "y"])
+	dock._say_ok("Baked %d spatial entit%s with merged meshes and optimised collision." \
+		% [count, "ies" if count != 1 else "y"])
 
 func _open_bake_to_file_dialog() -> void:
 	var dlg := EditorFileDialog.new()
@@ -457,109 +395,16 @@ func _open_bake_to_file_dialog() -> void:
 func _bake_to_file(target_path: String) -> void:
 	var root: Node = dock.scene_query.placement_parent()
 	if root == null: dock._say("No scene open."); return
-
-	var dup_root: Node = root.duplicate()
-	_set_owners_recursive(dup_root, dup_root)
-
-	var entities: Array = []
-	for c in dup_root.get_children():
-		if c is SpatialEntity3D:
-			entities.append(c)
-	if entities.is_empty():
-		dock._say("No spatial entities found.")
-		dup_root.free()
-		return
-
-	for entity in entities:
-		var original_name: String = entity.name
-		entity.name = entity.name + "__bake_temp"
-		var wrapper := Node3D.new()
-		wrapper.name = original_name
-		wrapper.transform = (entity as Node3D).transform
-		dup_root.add_child(wrapper)
-		wrapper.owner = dup_root
-
-		var bodies: Array[StaticBody3D] = (entity as SpatialEntity3D).generated_bodies()
-		var by_surface: Dictionary = {}
-		for body in bodies:
-			var surf: String = body.get_meta("surface", "concrete")
-			if not by_surface.has(surf): by_surface[surf] = []
-			by_surface[surf].append(body)
-
-		for child in entity.get_children():
-			if not child.has_meta("generated"):
-				entity.remove_child(child)
-				wrapper.add_child(child)
-				_set_owners_recursive(child, dup_root)
-
-		for surf in by_surface:
-			var st := SurfaceTool.new()
-			st.begin(Mesh.PRIMITIVE_TRIANGLES)
-			for body in by_surface[surf]:
-				var mi: MeshInstance3D = body.get_child(0)
-				st.append_from(mi.mesh, 0, body.transform)
-			var merged_mi := MeshInstance3D.new()
-			merged_mi.name = original_name + "_" + surf + "_mesh"
-			merged_mi.mesh = st.commit()
-			wrapper.add_child(merged_mi)
-			merged_mi.owner = dup_root
-
-		var all_tris := PackedVector3Array()
-		for surf in by_surface:
-			for body in by_surface[surf]:
-				var mi: MeshInstance3D = body.get_child(0)
-				var arrays: Array = mi.mesh.surface_get_arrays(0)
-				var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-				var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-				if indices.is_empty():
-					for idx in range(0, verts.size(), 3):
-						all_tris.append(body.transform * verts[idx])
-						all_tris.append(body.transform * verts[idx + 1])
-						all_tris.append(body.transform * verts[idx + 2])
-				else:
-					for idx in range(0, indices.size(), 3):
-						all_tris.append(body.transform * verts[indices[idx]])
-						all_tris.append(body.transform * verts[indices[idx + 1]])
-						all_tris.append(body.transform * verts[indices[idx + 2]])
-
-		if all_tris.size() > 0:
-			var phys_body := StaticBody3D.new()
-			phys_body.name = "Collision"
-			var cshape := CollisionShape3D.new()
-			var trimesh := ConcavePolygonShape3D.new()
-			trimesh.set_faces(all_tris)
-			cshape.shape = trimesh
-			phys_body.add_child(cshape)
-			wrapper.add_child(phys_body)
-			phys_body.owner = dup_root
-			cshape.owner = dup_root
-
-		dup_root.remove_child(entity)
-		entity.free()
-
-	var packed := PackedScene.new()
-	var err := packed.pack(dup_root)
-	if err != OK:
-		dock._say_err("Failed to pack scene (error %d)." % err)
-		dup_root.free()
-		return
-
-	err = ResourceSaver.save(packed, target_path)
-	dup_root.free()
-	if err != OK:
-		dock._say_err("Failed to save scene (error %d)." % err)
-		return
-
-	dock._say_ok("Baked %d entit%s → %s" % [
-		entities.size(),
-		"ies" if entities.size() != 1 else "y",
-		target_path
-	])
-
-func _set_owners_recursive(node: Node, owner: Node) -> void:
-	for child in node.get_children():
-		child.owner = owner
-		_set_owners_recursive(child, owner)
+	var count := 0
+	for c in root.get_children():
+		if c is SpatialEntity3D: count += 1
+	if count == 0: dock._say("No spatial entities found."); return
+	var packed := BakeEngine.bake_to_packed_scene(root)
+	if packed == null: dock._say_err("Failed to pack scene."); return
+	var err := ResourceSaver.save(packed, target_path)
+	if err != OK: dock._say_err("Failed to save scene (error %d)." % err); return
+	dock._say_ok("Baked %d entit%s → %s" \
+		% [count, "ies" if count != 1 else "y", target_path])
 
 # --- Helpers ---
 
@@ -813,14 +658,14 @@ func _apply_wall_changes() -> void:
 	_refresh_wall_list()
 	dock._say("%s wall updated, surface: %s, %s." % [_current_wall_side, wc.surface, "enabled" if wc.enabled else "disabled"])
 
-func _build_anchor_ui() -> void:
+func _build_anchor_ui_into(c: VBoxContainer) -> void:
 	var anchor_lbl := Label.new()
 	anchor_lbl.text = "Resize anchor:"
-	add_child(anchor_lbl)
+	c.add_child(anchor_lbl)
 
 	var anchor_grid := GridContainer.new()
 	anchor_grid.columns = 3
-	add_child(anchor_grid)
+	c.add_child(anchor_grid)
 
 	var anchor_defs := [
 		["NW", Vector2(0.0, 0.0), "Northwest corner, keep northwest fixed"],
@@ -853,12 +698,12 @@ func _build_anchor_ui() -> void:
 	smart_btn.text = "Smart anchor"
 	smart_btn.tooltip_text = "Auto-select anchor based on which sides have connected rooms"
 	smart_btn.pressed.connect(_auto_anchor)
-	add_child(smart_btn)
+	c.add_child(smart_btn)
 
 	_cascade_checkbox = CheckBox.new()
 	_cascade_checkbox.text = "Cascade: push connected rooms"
 	_cascade_checkbox.tooltip_text = "When growing, recursively push rooms flush with the growing wall"
-	add_child(_cascade_checkbox)
+	c.add_child(_cascade_checkbox)
 
 func _anchor_position(room: Room3D, new_size: Vector3, anchor: Vector2) -> Vector3:
 	# anchor.x: 0=west edge fixed, 0.5=center, 1=east edge fixed
@@ -996,3 +841,6 @@ func _set_anchor_to(anchor: Vector2) -> void:
 
 func _btn(label: String, cb: Callable) -> void:
 	var b := Button.new(); b.text = label; b.pressed.connect(cb); add_child(b)
+
+func _btn_into(c: Control, label: String, cb: Callable) -> void:
+	var b := Button.new(); b.text = label; b.pressed.connect(cb); c.add_child(b)

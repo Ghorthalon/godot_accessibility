@@ -9,6 +9,32 @@ var nav_control: NavControl
 var _audio_preview_enabled: CheckBox
 
 func _ready() -> void:
+	var nav_lbl := Label.new(); nav_lbl.text = "Keyboard navigation:"
+	add_child(nav_lbl)
+	nav_control = NavControl.new()
+	add_child(nav_control)
+	nav_control.move_cursor.connect(_move_cursor)
+	nav_control.jump_entity.connect(_jump_to_entity)
+	nav_control.step_up.connect(_on_step_up)
+	nav_control.step_down.connect(_on_step_down)
+	nav_control.snap_floor.connect(_snap_to_floor)
+	nav_control.snap_wall.connect(_snap_to_wall)
+	nav_control.snap_room.connect(_snap_to_room)
+	nav_control.probe.connect(_probe)
+	nav_control.report_location.connect(_report_cursor)
+	nav_control.new_standalone_room.connect(func(): dock.tab_rooms._new_root_room())
+	nav_control.punch_door_at_cursor.connect(func(): dock.tab_rooms._punch_at_cursor())
+	nav_control.corner_a.connect(func(): dock.corner_selector._set_corner_a())
+	nav_control.corner_b.connect(func(): dock.corner_selector._set_corner_b())
+	nav_control.place_room_from_corners.connect(func(): dock.tab_rooms._place_room_from_corners())
+	nav_control.nudge_node_to_floor.connect(func(): dock.tab_place._nudge_to_floor())
+	nav_control.snap_node_to_wall.connect(func(): dock.tab_place._snap_to_nearest_wall())
+	nav_control.snap_node_to_doorway.connect(func(): dock.tab_place._snap_to_nearest_doorway())
+	nav_control.center_node_ew.connect(func(): dock.tab_place._center_east_west())
+	nav_control.center_node_ns.connect(func(): dock.tab_place._center_north_south())
+	nav_control.add_zone_to_floor.connect(func(): dock.tab_place._add_floor_zone())
+	dock.cursor_jumped.connect(_report_cursor)
+
 	var h := HBoxContainer.new()
 	var sl := Label.new(); sl.text = "Step (m):"
 	step_field = SpinBox.new()
@@ -47,33 +73,6 @@ func _ready() -> void:
 	corner_selector.dock = dock
 	add_child(corner_selector)
 	dock.corner_selector = corner_selector
-
-	add_child(HSeparator.new())
-	var nav_lbl := Label.new(); nav_lbl.text = "Keyboard navigation:"
-	add_child(nav_lbl)
-	nav_control = NavControl.new()
-	add_child(nav_control)
-	nav_control.move_cursor.connect(_move_cursor)
-	nav_control.jump_entity.connect(_jump_to_entity)
-	nav_control.step_up.connect(_on_step_up)
-	nav_control.step_down.connect(_on_step_down)
-	nav_control.snap_floor.connect(_snap_to_floor)
-	nav_control.snap_wall.connect(_snap_to_wall)
-	nav_control.snap_room.connect(_snap_to_room)
-	nav_control.probe.connect(_probe)
-	nav_control.report_location.connect(_report_cursor)
-	nav_control.new_standalone_room.connect(func(): dock.tab_rooms._new_root_room())
-	nav_control.punch_door_at_cursor.connect(func(): dock.tab_rooms._punch_at_cursor())
-	nav_control.corner_a.connect(func(): dock.corner_selector._set_corner_a())
-	nav_control.corner_b.connect(func(): dock.corner_selector._set_corner_b())
-	nav_control.place_room_from_corners.connect(func(): dock.tab_rooms._place_room_from_corners())
-	nav_control.nudge_node_to_floor.connect(func(): dock.tab_place._nudge_to_floor())
-	nav_control.snap_node_to_wall.connect(func(): dock.tab_place._snap_to_nearest_wall())
-	nav_control.snap_node_to_doorway.connect(func(): dock.tab_place._snap_to_nearest_doorway())
-	nav_control.center_node_ew.connect(func(): dock.tab_place._center_east_west())
-	nav_control.center_node_ns.connect(func(): dock.tab_place._center_north_south())
-	nav_control.add_zone_to_floor.connect(func(): dock.tab_place._add_floor_zone())
-	dock.cursor_jumped.connect(_report_cursor)
 
 	add_child(HSeparator.new())
 	_audio_preview_enabled = CheckBox.new()

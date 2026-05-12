@@ -112,3 +112,48 @@ static func _add_spinbox(c: VBoxContainer, lbl: String,
 	row.add_child(spin)
 	c.add_child(row)
 	return spin
+
+# ---------------------------------------------------------------------------
+# Rebuild queue
+# ---------------------------------------------------------------------------
+
+var _rebuild_queued := false
+var _rebuild_gen    := 0
+
+func _queue_rebuild() -> void:
+	if is_inside_tree() and not _rebuild_queued:
+		_rebuild_queued = true
+		_rebuild_gen   += 1
+		call_deferred("rebuild")
+
+## Returns true when the queued rebuild has been superseded by a newer one.
+## Call after await get_tree().process_frame inside each subclass rebuild
+##   var my_gen := _rebuild_gen
+##   await get_tree().process_frame
+##   if _check_rebuild_stale(my_gen): return
+func _check_rebuild_stale(gen: int) -> bool:
+	return _rebuild_gen != gen
+
+# ---------------------------------------------------------------------------
+# Shared geometry helper
+# ---------------------------------------------------------------------------
+
+## Creates StaticBody3D -> MeshInstance3D(BoxMesh) -> CollisionShape3D(BoxShape3D)
+## tagged "generated" + "surface", oriented by xform, added to parent.
+static func _spawn_box(parent: Node3D, body_name: String,
+		xform: Transform3D, sz: Vector3, surface: String) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.set_meta("generated", true)
+	body.set_meta("surface", surface)
+	body.name = body_name
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new(); bm.size = sz; mi.mesh = bm
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new(); bs.size = sz; cs.shape = bs
+	body.add_child(mi); body.add_child(cs)
+	parent.add_child(body)
+	body.transform = xform
+	var root := parent.get_tree().edited_scene_root
+	if root:
+		for n: Node in [body, mi, cs]: n.owner = root
+	return body

@@ -10,37 +10,11 @@ var effect_props_box: VBoxContainer
 var _current_eff_idx: int = -1
 # Array of [prop_name: String, control: Control] for the active property panel
 var _prop_controls: Array = []
+# Array of [display_name: String, class_name: String]
+var _effect_classes: Array = []
 
 # Internal property names shared by all Resources, skip these
 const _SKIP_PROPS := ["script", "resource_local_to_scene", "resource_path", "resource_name"]
-
-const EFFECT_CLASSES := [
-	["Amplify", "AudioEffectAmplify"],
-	["Band Limit Filter", "AudioEffectBandLimitFilter"],
-	["Band Pass Filter", "AudioEffectBandPassFilter"],
-	["Capture", "AudioEffectCapture"],
-	["Chorus", "AudioEffectChorus"],
-	["Compressor", "AudioEffectCompressor"],
-	["Delay", "AudioEffectDelay"],
-	["Distortion", "AudioEffectDistortion"],
-	["EQ 6-band", "AudioEffectEQ6"],
-	["EQ 10-band", "AudioEffectEQ10"],
-	["EQ 21-band", "AudioEffectEQ21"],
-	["High Pass Filter", "AudioEffectHighPassFilter"],
-	["High Shelf Filter", "AudioEffectHighShelfFilter"],
-	["Hard Limiter", "AudioEffectHardLimiter"],
-	["Limiter", "AudioEffectLimiter"],
-	["Low Pass Filter", "AudioEffectLowPassFilter"],
-	["Low Shelf Filter", "AudioEffectLowShelfFilter"],
-	["Notch Filter", "AudioEffectNotchFilter"],
-	["Panner", "AudioEffectPanner"],
-	["Phaser", "AudioEffectPhaser"],
-	["Pitch Shift", "AudioEffectPitchShift"],
-	["Record", "AudioEffectRecord"],
-	["Reverb", "AudioEffectReverb"],
-	["Spectrum Analyzer", "AudioEffectSpectrumAnalyzer"],
-	["Stereo Enhance", "AudioEffectStereoEnhance"],
-]
 
 func _ready() -> void:
 	var lbl := Label.new()
@@ -62,9 +36,15 @@ func _ready() -> void:
 
 	effect_type = OptionButton.new()
 	effect_type.accessibility_name = "Effect type to add"
-	for pair in EFFECT_CLASSES:
+	_effect_classes = _build_effect_list()
+	for pair in _effect_classes:
 		effect_type.add_item(pair[0])
-	effect_type.selected = 22  # Default: Reverb
+	var reverb_idx := 0
+	for i in _effect_classes.size():
+		if _effect_classes[i][1] == "AudioEffectReverb":
+			reverb_idx = i
+			break
+	effect_type.selected = reverb_idx
 	add_child(effect_type)
 
 	_btn("Add effect to bus", _add_effect)
@@ -276,7 +256,7 @@ func _apply_effect_props() -> void:
 func _add_effect() -> void:
 	var bus_idx: int = dock.current_bus_idx
 	if bus_idx < 0: dock._say("No bus selected."); return
-	var pair: Array = EFFECT_CLASSES[effect_type.selected]
+	var pair: Array = _effect_classes[effect_type.selected]
 	var effect = ClassDB.instantiate(pair[1])
 	if effect == null:
 		dock._say("Could not create effect %s." % pair[0]); return
@@ -357,6 +337,24 @@ func _save_layout() -> void:
 	var path: String = ProjectSettings.get_setting(
 		"audio/buses/default_bus_layout", "res://default_bus_layout.tres")
 	ResourceSaver.save(AudioServer.generate_bus_layout(), path)
+
+func _build_effect_list() -> Array:
+	var result := []
+	for cls in ClassDB.get_class_list():
+		if cls == "AudioEffect":
+			continue
+		if ClassDB.is_parent_class(cls, "AudioEffect") and ClassDB.can_instantiate(cls):
+			result.append([_class_to_display(cls), cls])
+	result.sort_custom(func(a, b): return a[0] < b[0])
+	return result
+
+func _class_to_display(cls: String) -> String:
+	var parts := cls.trim_prefix("AudioEffect").to_snake_case().split("_")
+	var words := PackedStringArray()
+	for p in parts:
+		if p.length() > 0:
+			words.append(p.capitalize())
+	return " ".join(words)
 
 func _btn(label: String, cb: Callable) -> void:
 	var b := Button.new()

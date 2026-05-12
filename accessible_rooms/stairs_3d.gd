@@ -31,9 +31,6 @@ extends SpatialEntity3D
 
 @export var rebuild_now: bool = false: set = _trigger
 
-var _rebuild_queued := false
-var _rebuild_gen := 0
-
 func _set_width(v):  width = v;           _queue_rebuild()
 func _set_hc(v):     height_change = v;   _queue_rebuild()
 func _set_length(v): length = v;          _queue_rebuild()
@@ -48,12 +45,6 @@ func _set_ce(v):     ceiling_enabled = v;    _queue_rebuild()
 func _set_re(v):     risers_enabled = v;     _queue_rebuild()
 func _trigger(_v):   rebuild()
 
-func _queue_rebuild() -> void:
-	if is_inside_tree() and not _rebuild_queued:
-		_rebuild_queued = true
-		_rebuild_gen += 1
-		call_deferred("rebuild")
-
 func rebuild() -> void:
 	_rebuild_queued = false
 	var my_gen := _rebuild_gen
@@ -61,7 +52,7 @@ func rebuild() -> void:
 	for c in get_children():
 		if c.has_meta("generated") or c.has_meta("stairs_area"): c.queue_free()
 	await get_tree().process_frame
-	if _rebuild_gen != my_gen: return
+	if _check_rebuild_stale(my_gen): return
 	_build_stairs()
 	_build_stairs_area()
 
@@ -106,74 +97,44 @@ func _build_stairs() -> void:
 	var slope_dir: Vector3 = (travel_dir * length + Vector3.UP * height_change).normalized()
 	var slope_length: float = sqrt(length * length + height_change * height_change)
 
-	# Treads and risers 
+	# Treads and risers
+	var tread_normal := perp_dir.cross(travel_dir).normalized()
+	var tread_sz := Vector3(width, sd, WALL_THICKNESS)
+	var riser_normal := perp_dir.cross(Vector3.UP).normalized()
+	var riser_sz := Vector3(width, sh, WALL_THICKNESS)
 	for i in n:
-		# Tread, horizontal flat box, top face at (i+1)*sh above low floor.
+		# Tread: horizontal flat box, top face at (i+1)*sh above low floor.
 		var tread_center: Vector3 = \
 			travel_dir * (-half_len + (i + 0.5) * sd) + \
 			Vector3.UP * ((i + 1) * sh)
-		_spawn_panel("tread", surface_floor,
-			tread_center, perp_dir, travel_dir,
-			Rect2(-width / 2.0, -sd / 2.0, width, sd), i)
+		_spawn_box(self, "tread_%d" % i,
+			Transform3D(Basis(perp_dir, travel_dir, tread_normal), tread_center), tread_sz, surface_floor)
 
-		# Riser, vertical face connecting tread i-1 to tread i.
+		# Riser: vertical face connecting tread i-1 to tread i.
 		if risers_enabled:
 			var riser_center: Vector3 = \
 				travel_dir * (-half_len + i * sd) + \
 				Vector3.UP * ((i + 0.5) * sh)
-			_spawn_panel("riser", surface_floor,
-				riser_center, perp_dir, Vector3.UP,
-				Rect2(-width / 2.0, -sh / 2.0, width, sh), i)
+			_spawn_box(self, "riser_%d" % i,
+				Transform3D(Basis(perp_dir, Vector3.UP, riser_normal), riser_center), riser_sz, surface_floor)
 
 	# Side walls, parallelogram matching average slope, same as Ramp3D
 	if wall_sides_enabled:
 		var wall_center_y: float = (height_change + clearance) / 2.0
+		var wall_sz := Vector3(slope_length, clearance, WALL_THICKNESS)
+		var wall_normal := slope_dir.cross(Vector3.UP).normalized()
 		for sign in [-1, 1]:
 			var wall_center: Vector3 = perp_dir * (sign * width / 2.0) + Vector3.UP * wall_center_y
-			_spawn_panel("wall", surface_walls,
-				wall_center, slope_dir, Vector3.UP,
-				Rect2(-slope_length / 2.0, -clearance / 2.0, slope_length, clearance),
-				(0 if sign < 0 else 1))
+			_spawn_box(self, "wall_%d" % (0 if sign < 0 else 1),
+				Transform3D(Basis(slope_dir, Vector3.UP, wall_normal), wall_center), wall_sz, surface_walls)
 
 	# Ceiling, sloped panel parallel to average slope
 	if ceiling_enabled:
 		var ceil_center: Vector3 = Vector3.UP * (height_change / 2.0 + clearance)
-		_spawn_panel("ceiling", surface_ceiling,
-			ceil_center, perp_dir, slope_dir,
-			Rect2(-width / 2.0, -slope_length / 2.0, width, slope_length), 0)
-
-func _spawn_panel(side: String, surface: String,
-		center: Vector3, bu: Vector3, bv: Vector3,
-		r: Rect2, idx: int) -> void:
-	var body := StaticBody3D.new()
-	body.set_meta("generated", true)
-	body.set_meta("surface", surface)
-	body.name = "%s_%d" % [side, idx]
-
-	var thickness := WALL_THICKNESS
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(r.size.x, r.size.y, thickness)
-	mi.mesh = bm
-
-	var cs := CollisionShape3D.new()
-	var bs := BoxShape3D.new()
-	bs.size = bm.size
-	cs.shape = bs
-
-	body.add_child(mi)
-	body.add_child(cs)
-	add_child(body)
-
-	var normal := bu.cross(bv).normalized()
-	var t := Transform3D()
-	t.basis = Basis(bu, bv, normal)
-	t.origin = center + bu * (r.position.x + r.size.x / 2.0) + bv * (r.position.y + r.size.y / 2.0)
-	body.transform = t
-
-	var root := get_tree().edited_scene_root
-	if root:
-		for nd: Node in [body, mi, cs]: nd.owner = root
+		var ceil_sz := Vector3(width, slope_length, WALL_THICKNESS)
+		var ceil_normal := perp_dir.cross(slope_dir).normalized()
+		_spawn_box(self, "ceiling_0",
+			Transform3D(Basis(perp_dir, slope_dir, ceil_normal), ceil_center), ceil_sz, surface_ceiling)
 
 func _build_stairs_area() -> void:
 	var area := Area3D.new()
@@ -280,24 +241,21 @@ func room_side_at_low_end() -> String:
 
 ## The wall side on the room that faces the HIGH end of this staircase.
 func room_side_at_high_end() -> String:
-	var opp := {"north": "south", "south": "north", "east": "west", "west": "east"}
-	return opp[high_end]
+	return CardinalDir.opposite(high_end)
 
 # SpatialEntity3D neighbour interface
 
 func neighbor_offset(side: String, other_size: Vector3) -> Vector3:
 	if side == high_end:
 		return high_end_room_offset(other_size)
-	var opp := {"north": "south", "south": "north", "east": "west", "west": "east"}
-	if side == opp.get(high_end, ""):
+	if side == CardinalDir.opposite(high_end):
 		return low_end_room_offset(other_size)
 	return Vector3.ZERO
 
 func neighbor_doorway_side(side: String) -> String:
 	if side == high_end:
 		return room_side_at_high_end()
-	var opp := {"north": "south", "south": "north", "east": "west", "west": "east"}
-	if side == opp.get(high_end, ""):
+	if side == CardinalDir.opposite(high_end):
 		return room_side_at_low_end()
 	return ""
 

@@ -38,27 +38,12 @@ I will go through each part of the UI and explain what it does. By the end of th
 
 #### Rooms tab
 
-This is where you create rooms.
+This is where you create rooms. The rooms tab is divided into a few subtabs, as it has a lot of controls.
 
-* w: The width of the room to create
-* h: the height of the room to create
-* d: the depth of the room to create
-* Build walls: If checked, walls will surround the created room. If unchecked, they won't. Useful for creating larger rooms out of smaller ones, or for outdoor areas. 
-* Build ceiling: The exact same as walls but for ceilings.
-* Doorway size:
-    * w: The width of any doorways to create. Doorways are always created locally to the wall they are placed on. So width will always mean the space along the wall, no matter which direction the wall is facing. 
-    * h: the height of any doorway to create
-* Create door placeholders at new doorways: If checked, it will create a simple node3d where the door should go. You can reparent this or change it to your door scene, or remove it entirely and place your actual doors manually. Or you can also just keep it open if you don't actually want any doors.
-* New standalone room: This places a room at the current cursor position. We will get to the cursor in a moment. The room will be placed so that the room's exact center is at the cursor, so the room will surround it.
-* Place room from corners: If you made a selection using the cursor, again, more on this below, this will fill the selection that you made with the room.
-* Add room to north of current: This will add a room to the north of the currently selected room. It takes the width, depth and height you have selected, positions the room so that its middle lines up with the middle of the northern wall, and automatically punches a doorway if build walls is enabled.
-* Punch doorway north on current: This punches a doorway in the middle of the northern wall. Useful if you have a room there which does not have a connection to this room yet, or if you plan to build something else there later by hand.
-* Add room to south, east and west of current, and punch doorway south, east and west of current: Exactly the same as north, except in any of the 3 remaining directions.
-* Punch doorway at cursor (on nearest wall): This will punch a doorway using the entered dimensions at the nearest wall to the cursor.
-* Punch hole at cursor (on nearest wall): Doorways are always placed at the bottom or floor or a room. If your door height is sufficiently small, this button will not do this, and instead take your cursor as the center point of the hole to punch instead. This can be useful for windows, firing holes, or other such geometry.
+##### Rooms subtab
+
 * Room list: This is the list of rooms that the addon has found in the current placement parent. If use selected node is checked, it will scan the selected node. If it is not checked, it will scan the root node of the scene you have open. It will tell you the room name and it's dimensions. Selecting it here will also select it for any future operations on rooms. For example, you will select a room here, then the buttons above will operate on the room selected here. 
 * Refresh entity list: This will rescan the scene tree manually. If your room list is empty but you know you have nodes, this will fix it.
-* Bake scene: this takes all of the addon created rooms, ramps, and other geometry, and compiles it into plain Godot nodes instead. It also merges the geometry into single meshes where possible, while keeping any custom data you might have entered for surfaces and so on. This will improve performance a lot especially for larger worlds. This also allows you to place scripts and such on your room geometry yourself, as before all of this would be taken up by the addon's scripts instead and you would need to subclass from the addon's authoring scripts. There are two buttons. One of them will replace your current scene, so it will delete the nodes within it and replace them with the baked versions. The other one will bake it to a new scene. This is recommended. I usually have a dev scene which I exclude from being shipped, which is where I do all my editing. I then save it to a world baked scene when it's time to ship or I'm actually done with the environment. I always keep them around however in case I need to make edits.
 * Resize anchor:
     * NW, N, NE, E, SE, S, SW, W: When you resize a room, the room will usually be resized from it's center. This is problematic if you already have rooms connecting to other rooms, because they will be pulled away from the connecting room as they shrink inward. These anchors will let you set from which point the room will grow or shrink. For example, if you set the anchor to NE, then the northeast corner will stay exactly where it is, and the room will shrink inward, or grow outward, from the most northeastern point. Similarly, if you set this to south, then the room will grow and shrink towards the top and sides, while the southern edge remains exactly where it is.
     * Smart anchor: This will scan the room to figure out which sides are connected to sides of other surrounding spatial entities, and set the smart anchor to those. If you have something already built, this is usually what you want. This way, it will only shrink or grow the the room in the direction which does not have something on that side, while keeping the sides which do connect to something untouched.
@@ -68,6 +53,27 @@ This is where you create rooms.
 * Measure space at cursor: This will scan the surrounding geometry and tell you how much free space you have in any direction.
 * Resize:
     * Resize room to fill E->W, resize room to fill N->S: These two controls will measure the current free space at the cursor and expand the room you have selected to fill it. This is useful if you have two rooms which are currently not connected, but want to connect them using another room, hallway, etc.
+* w: The width of the room to create
+* h: the height of the room to create
+* d: the depth of the room to create
+* Build walls: If checked, walls will surround the created room. If unchecked, they won't. Useful for creating larger rooms out of smaller ones, or for outdoor areas. 
+* Build ceiling: The exact same as walls but for ceilings.
+* New standalone room: This places a room at the current cursor position. We will get to the cursor in a moment. The room will be placed so that the room's exact center is at the cursor, so the room will surround it.
+* Place room from corners: If you made a selection using the cursor, again, more on this below, this will fill the selection that you made with the room.
+* Add room to north of current: This will add a room to the north of the currently selected room. It takes the width, depth and height you have selected, positions the room so that its middle lines up with the middle of the northern wall, and automatically punches a doorway if build walls is enabled.
+* Add room to south, east and west of current: Exactly the same as north, except in any of the 3 remaining directions.
+
+
+##### Doors & Walls subtab
+
+* Doorway size:
+    * w: The width of any doorways to create. Doorways are always created locally to the wall they are placed on. So width will always mean the space along the wall, no matter which direction the wall is facing. 
+    * h: the height of any doorway to create
+* Create door placeholders at new doorways: If checked, it will create a simple node3d where the door should go. You can reparent this or change it to your door scene, or remove it entirely and place your actual doors manually. Or you can also just keep it open if you don't actually want any doors.
+* Punch doorway north on current: This punches a doorway in the middle of the northern wall. Useful if you have a room there which does not have a connection to this room yet, or if you plan to build something else there later by hand.
+* Punch doorway at cursor (on nearest wall): This will punch a doorway using the entered dimensions at the nearest wall to the cursor.
+* Punch doorway on north, south, east, or west of current room: Adds a doorway at the middle of the selected side of the room's wall. The door will always start level with the floor.
+* Punch hole at cursor (on nearest wall): Doorways are always placed at the bottom or floor or a room. If your door height is sufficiently small, this button will not do this, and instead take your cursor as the center point of the hole to punch instead. This can be useful for windows, firing holes, or other such geometry.
 * Doorway list: This will show you each hole / doorway that is currently present in the room. This will look something like: [0] east  U:5.00 V:-1.25  2.0×2.5m. This means: 0 is the index, U is the horizontal position along the wall from left to right, V is the vertical position along the wall from top to bottom, and the size. The wall local coordinates start in the middle of the wall, so the exact center middle is 0,0.
 * If you have a door selected, the next fields are:
     * Name: A name for the doorway, useful for keeping track of many of them in one room
@@ -82,6 +88,10 @@ This is where you create rooms.
     * enabled: Whether this wall is constructed or not.
     * Surface: The surface string which is available on get_meta("surface") on the object. Useful for things like footsteps. 
     * Apply wall changes: Reconfigure the wall with the settings you have set here.
+
+##### Bake subtab
+
+* Bake scene: this takes all of the addon created rooms, ramps, and other geometry, and compiles it into plain Godot nodes instead. It also merges the geometry into single meshes where possible, while keeping any custom data you might have entered for surfaces and so on. This will improve performance a lot especially for larger worlds. This also allows you to place scripts and such on your room geometry yourself, as before all of this would be taken up by the addon's scripts instead and you would need to subclass from the addon's authoring scripts. There are two buttons. One of them will replace your current scene, so it will delete the nodes within it and replace them with the baked versions. The other one will bake it to a new scene. This is recommended. I usually have a dev scene which I exclude from being shipped, which is where I do all my editing. I then save it to a world baked scene when it's time to ship or I'm actually done with the environment. I always keep them around however in case I need to make edits.
 
 #### Ramps:
 

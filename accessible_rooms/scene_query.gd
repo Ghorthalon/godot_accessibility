@@ -91,6 +91,11 @@ func _collect_containing(node: Node, p: Vector3, out: Array[SpatialEntity3D]) ->
 	for child in node.get_children():
 		_collect_containing(child, p, out)
 
+## Returns the innermost SpatialEntity3D that contains p, or null.
+func innermost_entity_containing(p: Vector3) -> SpatialEntity3D:
+	var found := entities_containing_sorted(p)
+	return found[0] if not found.is_empty() else null
+
 ## Returns the innermost Node3D whose center should be used for the inside.wav sound.
 ## Combines SpatialEntity3D geometric containment with physics-based solid object containment,
 ## returning whichever container has the smallest volume.
@@ -505,3 +510,97 @@ func _wall_open_status(room: Room3D, side: String,
 		if face_rect.intersects(door_rect):
 			return ConnectionInfo.Status.OPEN
 	return ConnectionInfo.Status.BLOCKED
+
+# ---------------------------------------------------------------------------
+# Gap detection
+# ---------------------------------------------------------------------------
+
+## Scans all SpatialEntity3D pairs for gaps between wall planes.
+## Returns an array of dicts: {entity_a, entity_b, wall_a, wall_b, gap_distance, midpoint}.
+## Only reports gaps where 0 < gap <= max_gap_distance and wall faces overlap.
+func detect_gaps(max_gap_distance: float) -> Array[Dictionary]:
+	var entities: Array[SpatialEntity3D] = []
+	for e in entities_in_scene():
+		if e is SpatialEntity3D:
+			entities.append(e as SpatialEntity3D)
+	var results: Array[Dictionary] = []
+	for i in entities.size():
+		for j in range(i + 1, entities.size()):
+			var a := entities[i]
+			var b := entities[j]
+			for fa in a.boundary_faces():
+				var ga := _face_geometry(fa)
+				for fb in b.boundary_faces():
+					var gb := _face_geometry(fb)
+					if ga["axis"] != gb["axis"]: continue
+					if ga["normal_sign"] == gb["normal_sign"]: continue
+					# The face with normal_sign -1 lies on the higher plane coord side of the gap.
+					var neg := ga if ga["normal_sign"] == -1 else gb
+					var pos := gb if ga["normal_sign"] == -1 else ga
+					var gap: float = (neg["plane_pos"] as float) - (pos["plane_pos"] as float)
+					if gap <= SpatialEntity3D.EPSILON or gap > max_gap_distance: continue
+					if not _faces_overlap_perp(neg, pos): continue
+					if not _ranges_overlap(
+						neg["y_lo"] as float, neg["y_hi"] as float,
+						pos["y_lo"] as float, pos["y_hi"] as float): continue
+					results.append({
+						"entity_a": a, "entity_b": b,
+						"wall_a": fa["label"], "wall_b": fb["label"],
+						"gap_distance": gap,
+						"midpoint": _gap_midpoint(neg, pos, gap),
+					})
+	return results
+
+## Projects a connection_probe_points() face dict into axis-aligned scalar
+## extents used by gap detection: axis ("x" or "z"), normal_sign (+/-1),
+## plane_pos, perp_lo/hi along the non-vertical perpendicular axis, and y_lo/y_hi.
+func _face_geometry(face: Dictionary) -> Dictionary:
+	var normal: Vector3 = face["normal"]
+	var center: Vector3 = face["face_center_world"]
+	var fw: float = face["face_width"]
+	var fh: float = face["face_height"]
+	var axis: String
+	var normal_sign: int
+	var plane_pos: float
+	var perp_lo: float
+	var perp_hi: float
+	if absf(normal.x) > 0.5:
+		axis = "x"
+		normal_sign = 1 if normal.x > 0.0 else -1
+		plane_pos = center.x
+		perp_lo = center.z - fw / 2.0
+		perp_hi = center.z + fw / 2.0
+	else:
+		axis = "z"
+		normal_sign = 1 if normal.z > 0.0 else -1
+		plane_pos = center.z
+		perp_lo = center.x - fw / 2.0
+		perp_hi = center.x + fw / 2.0
+	return {
+		"axis": axis, "normal_sign": normal_sign, "plane_pos": plane_pos,
+		"perp_lo": perp_lo, "perp_hi": perp_hi,
+		"y_lo": center.y - fh / 2.0, "y_hi": center.y + fh / 2.0,
+	}
+
+## Returns true when two perpendicular extents overlap.
+func _faces_overlap_perp(a: Dictionary, b: Dictionary) -> bool:
+	return (a["perp_hi"] as float) > (b["perp_lo"] as float) + SpatialEntity3D.EPSILON and \
+		   (b["perp_hi"] as float) > (a["perp_lo"] as float) + SpatialEntity3D.EPSILON
+
+## Returns true when two 1D ranges overlap.
+func _ranges_overlap(a_lo: float, a_hi: float, b_lo: float, b_hi: float) -> bool:
+	return a_hi > b_lo + SpatialEntity3D.EPSILON and b_hi > a_lo + SpatialEntity3D.EPSILON
+
+## Computes the world-space midpoint of the gap between two facing walls.
+func _gap_midpoint(neg_face: Dictionary, pos_face: Dictionary, gap: float) -> Vector3:
+	var perp_center: float = ((neg_face["perp_lo"] as float + neg_face["perp_hi"] as float) / 2.0 + \
+						(pos_face["perp_lo"] as float + pos_face["perp_hi"] as float) / 2.0) / 2.0
+	var y_center: float = (minf(neg_face["y_lo"] as float, pos_face["y_lo"] as float) + \
+					 maxf(neg_face["y_hi"] as float, pos_face["y_hi"] as float)) / 2.0
+	var gap_center: float = (pos_face["plane_pos"] as float) + gap / 2.0
+	match neg_face["axis"]:
+		"x":
+			return Vector3(gap_center, y_center, perp_center)
+		"z":
+			return Vector3(perp_center, y_center, gap_center)
+	return Vector3.ZERO

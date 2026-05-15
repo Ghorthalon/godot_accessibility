@@ -240,8 +240,10 @@ func connection_probe_points() -> Array[Dictionary]:
 	var low_center  := position + (-travel_dir * length / 2.0) + Vector3.UP * (clearance / 2.0)
 	var high_center := position + ( travel_dir * length / 2.0) + Vector3.UP * (height_change + clearance / 2.0)
 	return [
-		{"label": "low end",  "probe_world": low_center  + (-travel_dir) * 0.05,
+		{"label": "low end",  "normal": -travel_dir,
+		 "probe_world": low_center  + (-travel_dir) * 0.05,
 		 "face_center_world": low_center,  "face_width": width, "face_height": clearance},
-		{"label": "high end", "probe_world": high_center + travel_dir * 0.05,
+		{"label": "high end", "normal": travel_dir,
+		 "probe_world": high_center + travel_dir * 0.05,
 		 "face_center_world": high_center, "face_width": width, "face_height": clearance},
 	]

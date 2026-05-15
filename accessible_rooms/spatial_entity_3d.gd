@@ -84,14 +84,27 @@ func neighbor_doorway_side(_side: String) -> String:
 func has_wall(_side: String) -> bool:
 	return false
 
-## Returns probe descriptors for each connectable face. Each dict has
+## Returns descriptors for each connectable face. Each dict has
 ##   label: String ~ "north wall", "low end", "high end"
+##   normal: Vector3, outward unit normal of the face
 ##   probe_world: Vector3, world point 0.05m outside the face center
 ##   face_center_world: Vector3
 ##   face_width: float, face extent perpendicular to the outward normal
 ##   face_height: float, face extent in the vertical direction
+## Faces are assumed to be axis-aligned (normal points along ±X or ±Z, height along Y).
+## Used by scene_query.find_connections. A connectable face is one a doorway could
+## be punched through, subclasses may filter out walls that aren't physically present
+## ( for example Room3D skips sides where wall_cfg.enabled is false).
 func connection_probe_points() -> Array[Dictionary]:
 	return []
+
+## Returns the entity's geometric boundary faces, regardless of whether they have
+## physical walls. Used by scene_query.detect_gaps to find misalignments between
+## adjacent entities, including outdoor rooms where every wall is disabled.
+## Same dict schema as connection_probe_points(). Defaults to that method so
+## subclasses with no enabled/disabled distinction don't need override.
+func boundary_faces() -> Array[Dictionary]:
+	return connection_probe_points()
 
 # ---------------------------------------------------------------------------
 # Shared UI helper (available to all subclasses)

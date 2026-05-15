@@ -24,6 +24,9 @@ var _pending_resize: Dictionary = {}
 var _resize_conflict_bar: HBoxContainer
 var _resize_conflict_label: Label
 var _connection_container: VBoxContainer
+var _gap_max_spin: SpinBox
+var _gap_list: ItemList
+var _gap_results: Array[Dictionary] = []
 
 func _ready() -> void:
 	var tabs := TabContainer.new()
@@ -94,6 +97,20 @@ func _ready() -> void:
 	rooms_tab.add_child(HSeparator.new())
 	for side in ["north", "south", "east", "west"]:
 		_btn_into(rooms_tab, "Add room to %s of current" % side, _add_neighbor.bind(side))
+
+	rooms_tab.add_child(HSeparator.new())
+	var gap_header := Label.new(); gap_header.text = "Gap detection:"
+	rooms_tab.add_child(gap_header)
+	var gap_row := HBoxContainer.new()
+	var gap_lbl := Label.new(); gap_lbl.text = "Max gap (m):"
+	_gap_max_spin = _spinbox(0.5, 10.0, 0.5, 2.0)
+	gap_row.add_child(gap_lbl); gap_row.add_child(_gap_max_spin)
+	rooms_tab.add_child(gap_row)
+	_btn_into(rooms_tab, "Check gaps", _check_gaps)
+	_gap_list = ItemList.new()
+	_gap_list.custom_minimum_size = Vector2(0, 150)
+	_gap_list.item_selected.connect(_on_gap_selected)
+	rooms_tab.add_child(_gap_list)
 
 	# SUBTAB: Doors & Walls
 	var dw_tab := VBoxContainer.new()
@@ -838,6 +855,30 @@ func _set_anchor_to(anchor: Vector2) -> void:
 		_anchor_buttons[i].set_block_signals(true)
 		_anchor_buttons[i].button_pressed = (anchor_map[i] == anchor)
 		_anchor_buttons[i].set_block_signals(false)
+
+func _check_gaps() -> void:
+	if dock.scene_query == null: dock._say("No scene open."); return
+	_gap_results = dock.scene_query.detect_gaps(_gap_max_spin.value)
+	_gap_list.clear()
+	if _gap_results.is_empty():
+		dock._say_ok("No gaps found within %.1f meters." % _gap_max_spin.value)
+		return
+	for i in _gap_results.size():
+		var g: Dictionary = _gap_results[i]
+		var label := "%s (%s) \u2194 %s (%s): %.2fm gap" % [
+			g["entity_a"].name, g["wall_a"],
+			g["entity_b"].name, g["wall_b"],
+			g["gap_distance"]]
+		_gap_list.add_item(label)
+	dock._say("Found %d gap%s within %.1f meters." % [
+		_gap_results.size(), "s" if _gap_results.size() != 1 else "", _gap_max_spin.value])
+
+func _on_gap_selected(i: int) -> void:
+	if i < 0 or i >= _gap_results.size(): return
+	var g: Dictionary = _gap_results[i]
+	dock.cursor = g["midpoint"]
+	dock._say("Cursor moved to gap between %s and %s (%.2fm)." % [
+		g["entity_a"].name, g["entity_b"].name, g["gap_distance"]])
 
 func _btn(label: String, cb: Callable) -> void:
 	var b := Button.new(); b.text = label; b.pressed.connect(cb); add_child(b)

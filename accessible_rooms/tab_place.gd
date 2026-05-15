@@ -15,7 +15,18 @@ var _phys_width: SpinBox
 var _phys_height: SpinBox
 var _phys_depth: SpinBox
 
+var auto_parent_to_room: bool = false
+
 func _ready() -> void:
+	var room_toggle := CheckButton.new()
+	room_toggle.text = "Place inside containing room"
+	room_toggle.tooltip_text = "When on, objects placed at the cursor become children of the room (or other SpatialEntity3D) that contains the cursor. Falls back to the normal placement parent when the cursor isn't inside any room."
+	room_toggle.toggled.connect(func(on: bool) -> void:
+		auto_parent_to_room = on
+		dock._say("Auto-parent to containing room: %s." % ("on" if on else "off"))
+	)
+	add_child(room_toggle)
+
 	var pn_lbl := Label.new(); pn_lbl.text = "Place node at cursor:"
 	add_child(pn_lbl)
 	node_type_option = OptionButton.new()
@@ -127,17 +138,27 @@ func _ready() -> void:
 
 # --- Node placement ---
 
+## Returns the room containing pos when "Place inside containing room" is on
+## and such a room exists; otherwise falls back to scene_query.placement_parent().
+func _resolve_parent_for(pos: Vector3) -> Node:
+	if auto_parent_to_room:
+		var room := dock.scene_query.innermost_entity_containing(pos)
+		if room != null:
+			return room
+	return dock.scene_query.placement_parent()
+
 func _insert_node_at_cursor() -> void:
-	var root: Node = dock.scene_query.placement_parent()
-	if root == null: dock._say("No scene open."); return
+	var parent: Node = _resolve_parent_for(dock.cursor)
+	if parent == null: dock._say("No scene open."); return
+	var owner_node: Node = dock.scene_query.edited_root()
 	var type_name: String = node_type_option.get_item_text(node_type_option.selected)
 	var obj: Object = ClassDB.instantiate(type_name)
 	if obj == null: dock._say("Could not create %s." % type_name); return
 	var n := obj as Node
-	n.name = "%s%d" % [type_name, root.get_child_count() + 1]
+	n.name = "%s%d" % [type_name, parent.get_child_count() + 1]
+	parent.add_child(n); n.owner = owner_node
 	if n is Node3D:
-		(n as Node3D).position = dock.cursor
-	root.add_child(n); n.owner = root
+		(n as Node3D).global_position = dock.cursor
 	dock.last_placed_node = n as Node3D
 	dock._say("Inserted %s at %.1f %.1f %.1f." % [n.name, dock.cursor.x, dock.cursor.y, dock.cursor.z])
 
@@ -147,13 +168,14 @@ func _insert_scene_at_cursor() -> void:
 	if not ResourceLoader.exists(path): dock._say("Scene not found: %s" % path); return
 	var packed := load(path) as PackedScene
 	if packed == null: dock._say("Failed to load scene."); return
-	var root: Node = dock.scene_query.placement_parent()
-	if root == null: dock._say("No scene open."); return
+	var parent: Node = _resolve_parent_for(dock.cursor)
+	if parent == null: dock._say("No scene open."); return
+	var owner_node: Node = dock.scene_query.edited_root()
 	var instance := packed.instantiate()
+	parent.add_child(instance); instance.owner = owner_node
 	if instance is Node3D:
-		(instance as Node3D).position = dock.cursor
-	root.add_child(instance); instance.owner = root
-	if instance is Node3D: dock.last_placed_node = instance as Node3D
+		(instance as Node3D).global_position = dock.cursor
+		dock.last_placed_node = instance as Node3D
 	dock._say("Inserted %s at %.1f %.1f %.1f." % [instance.name, dock.cursor.x, dock.cursor.y, dock.cursor.z])
 
 # --- Floor zones ---
@@ -253,7 +275,7 @@ func _btn(label: String, cb: Callable) -> void:
 # --- Physical object insertion ---
 
 func _insert_physical_object() -> void:
-	var parent: Node = dock.scene_query.placement_parent()
+	var parent: Node = _resolve_parent_for(dock.cursor)
 	if parent == null: dock._say("No scene open."); return
 	var size := Vector3(_phys_width.value, _phys_height.value, _phys_depth.value)
 	var reason := _fit_check(dock.cursor, size)
@@ -262,12 +284,12 @@ func _insert_physical_object() -> void:
 	_create_physical_object(parent, dock.scene_query.edited_root(), dock.cursor, size)
 
 func _insert_physical_object_from_selection() -> void:
-	var parent: Node = dock.scene_query.placement_parent()
-	if parent == null: dock._say("No scene open."); return
 	var aabb: AABB = dock.corner_selector.get_aabb()
 	if aabb.size.x < 0.05 or aabb.size.y < 0.05 or aabb.size.z < 0.05:
 		dock._say("Selection too small, set corner A and B first."); return
 	var pos := Vector3(aabb.position.x + aabb.size.x / 2.0, aabb.position.y, aabb.position.z + aabb.size.z / 2.0)
+	var parent: Node = _resolve_parent_for(pos)
+	if parent == null: dock._say("No scene open."); return
 	var reason := _fit_check(pos, aabb.size)
 	if reason != "":
 		dock._say("Object (%.1f x %.1f x %.1f m) does not fit: %s." % [aabb.size.x, aabb.size.y, aabb.size.z, reason]); return
@@ -286,7 +308,6 @@ func _fit_check(pos: Vector3, size: Vector3) -> String:
 func _create_physical_object(parent: Node, owner_node: Node, pos: Vector3, size: Vector3) -> void:
 	var body := StaticBody3D.new()
 	body.name = "PhysicalObject%d" % (parent.get_child_count() + 1)
-	body.position = pos
 	var cs := CollisionShape3D.new()
 	var box_shape := BoxShape3D.new()
 	box_shape.size = size
@@ -299,6 +320,7 @@ func _create_physical_object(parent: Node, owner_node: Node, pos: Vector3, size:
 	mi.position = Vector3(0.0, size.y / 2.0, 0.0)
 	body.add_child(cs); body.add_child(mi)
 	parent.add_child(body)
+	body.global_position = pos
 	body.owner = owner_node; cs.owner = owner_node; mi.owner = owner_node
 	dock.last_placed_node = body
 	dock._say("Created %.1f x %.1f x %.1f m physical object at %.1f %.1f %.1f." % \

@@ -268,17 +268,29 @@ func connection_probe_points() -> Array[Dictionary]:
 	for side in ["north", "south", "east", "west"]:
 		var wall_cfg := cfg(side)
 		if wall_cfg == null or not wall_cfg.enabled: continue
-		var normal: Vector3 = NORMALS[side]
-		var face_center_world := position + _face_center_local(side)
-		var face_width: float = size.x if side in ["north", "south"] else size.z
-		result.append({
-			"label": side + " wall",
-			"probe_world": face_center_world + normal * 0.05,
-			"face_center_world": face_center_world,
-			"face_width": face_width,
-			"face_height": size.y,
-		})
+		result.append(_wall_face_dict(side))
 	return result
+
+## Includes all 4 cardinal walls regardless of enabled state, so gap detection
+## still flags misaligned outdoor zones whose walls have been disabled.
+func boundary_faces() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for side in ["north", "south", "east", "west"]:
+		result.append(_wall_face_dict(side))
+	return result
+
+func _wall_face_dict(side: String) -> Dictionary:
+	var normal: Vector3 = NORMALS[side]
+	var face_center_world := position + _face_center_local(side)
+	var face_width: float = size.x if side in ["north", "south"] else size.z
+	return {
+		"label": side + " wall",
+		"normal": normal,
+		"probe_world": face_center_world + normal * 0.05,
+		"face_center_world": face_center_world,
+		"face_width": face_width,
+		"face_height": size.y,
+	}
 
 func _face_center_local(side: String) -> Vector3:
 	match side:

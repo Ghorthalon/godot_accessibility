@@ -21,6 +21,7 @@ func _ready() -> void:
 	nav_control.snap_wall.connect(_snap_to_wall)
 	nav_control.snap_room.connect(_snap_to_room)
 	nav_control.probe.connect(_probe)
+	nav_control.scan_nearby.connect(_scan_nearby)
 	nav_control.report_location.connect(_report_cursor)
 	nav_control.new_standalone_room.connect(func(): dock.tab_rooms._new_root_room())
 	nav_control.punch_door_at_cursor.connect(func(): dock.tab_rooms._punch_at_cursor())
@@ -53,6 +54,7 @@ func _ready() -> void:
 		_btn("Move %s" % d[0], _move_cursor.bind(d[1]))
 	_btn("Snap cursor to current room", _snap_to_room)
 	_btn("Probe distances (6 directions)", _probe)
+	_btn("Scan nearby objects (5x step)", _scan_nearby)
 	_btn("Report cursor location", _report_cursor)
 
 	add_child(HSeparator.new())
@@ -136,6 +138,17 @@ func _report_cursor() -> void:
 	var container: SpatialEntity3D = containers[0] if not containers.is_empty() else null
 	parts.append("in " + dock.scene_query.entity_label(container) if container else "outside any room")
 
+	var nearby: Array[Node3D] = dock.scene_query.nearby_point_nodes(dock.cursor, dock.step)
+	if not nearby.is_empty():
+		var entries: Array[String] = []
+		var limit := mini(nearby.size(), 4)
+		for i in limit:
+			var n := nearby[i]
+			var d: float = n.global_position.distance_to(dock.cursor)
+			entries.append("%s (%.1fm)" % [dock.scene_query.entity_label(n), d])
+		var tail := "" if nearby.size() <= limit else ", and %d more" % (nearby.size() - limit)
+		parts.append("near: " + ", ".join(entries) + tail)
+
 	var msg := "Cursor %.1f %.1f %.1f. %s." % [dock.cursor.x, dock.cursor.y, dock.cursor.z, ". ".join(parts)]
 	cursor_label.text = msg
 	dock._say(msg)
@@ -150,6 +163,25 @@ func _probe() -> void:
 	var positions: Array[Vector3] = dock.scene_query.probe_positions(dock.cursor)
 	if not positions.is_empty():
 		dock.play_audio_staggered("distance", positions)
+
+func _scan_nearby() -> void:
+	var radius: float = dock.step * 5.0
+	var nodes: Array[Node3D] = dock.scene_query.nearby_placeable_nodes(dock.cursor, radius)
+	if nodes.is_empty():
+		dock._say("Nothing within %.1f meters." % radius)
+		return
+	var positions: Array[Vector3] = []
+	for n in nodes:
+		positions.append(n.global_position)
+	dock.play_audio_staggered("object", positions)
+	var entries: Array[String] = []
+	var limit := mini(nodes.size(), 6)
+	for i in limit:
+		var n := nodes[i]
+		var offset := SceneQuery.describe_offset(n.global_position - dock.cursor)
+		entries.append("%s %s" % [dock.scene_query.entity_label(n), offset])
+	var tail := "" if nodes.size() <= limit else "; and %d more" % (nodes.size() - limit)
+	dock._say("%d within %.1f meters: %s%s." % [nodes.size(), radius, "; ".join(entries), tail])
 
 # --- Jump to entity ---
 

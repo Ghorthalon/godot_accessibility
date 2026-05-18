@@ -121,19 +121,22 @@ func _build_wall(side: String) -> void:
 
 	var rects := _slice([Rect2(-u/2, -v/2, u, v)], wall_cfg.openings + _get_overlap_suppressions(side))
 	var normal := basis_u.cross(basis_v).normalized()
+	var inward: Vector3 = -NORMALS[side]
+	var thickness: float = wall_cfg.thickness
+	var inward_offset: Vector3 = inward * (thickness * 0.5)
 	for i in rects.size():
 		var r: Rect2 = rects[i]
-		var box_sz := Vector3(r.size.x, r.size.y, WALL_THICKNESS)
-		var origin := center + basis_u * (r.position.x + r.size.x / 2.0) + basis_v * (r.position.y + r.size.y / 2.0)
+		var box_sz := Vector3(r.size.x, r.size.y, thickness)
+		var origin := center + inward_offset + basis_u * (r.position.x + r.size.x / 2.0) + basis_v * (r.position.y + r.size.y / 2.0)
 		_spawn_box(self, "%s_%d" % [side, i], Transform3D(Basis(basis_u, basis_v, normal), origin), box_sz, wall_cfg.surface)
 
-	# Zone overlays: offset slightly along the wall normal to prevent z-fighting.
-	var zone_off: Vector3 = NORMALS[side] * EPSILON
+	# Zone overlays: nudged past the wall's interior face to prevent z-fighting.
+	var zone_off: Vector3 = inward * (thickness * 0.5 + EPSILON)
 	for i in wall_cfg.zones.size():
 		var zone: Dictionary = wall_cfg.zones[i]
 		var r: Rect2 = zone["rect"]
 		var zone_center := center + zone_off
-		var box_sz := Vector3(r.size.x, r.size.y, WALL_THICKNESS)
+		var box_sz := Vector3(r.size.x, r.size.y, thickness)
 		var origin := zone_center + basis_u * (r.position.x + r.size.x / 2.0) + basis_v * (r.position.y + r.size.y / 2.0)
 		_spawn_box(self, "%s_zone_%d" % [side, i], Transform3D(Basis(basis_u, basis_v, normal), origin), box_sz, zone.get("surface", "concrete"))
 

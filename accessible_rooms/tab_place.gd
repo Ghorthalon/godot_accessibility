@@ -11,11 +11,16 @@ var _floor_offset: SpinBox
 var _wall_offset: SpinBox
 var _door_inset: SpinBox
 
+var _body_type_option: OptionButton
 var _phys_width: SpinBox
 var _phys_height: SpinBox
 var _phys_depth: SpinBox
 
 var auto_parent_to_room: bool = false
+
+var _conflict_bar: HBoxContainer
+var _conflict_label: Label
+var _pending_placement: Dictionary = {}
 
 func _ready() -> void:
 	var room_toggle := CheckButton.new()
@@ -53,10 +58,33 @@ func _ready() -> void:
 	insert_scene_btn.pressed.connect(_insert_scene_at_cursor)
 	sc_row.add_child(insert_scene_btn)
 	add_child(sc_row)
+	_btn("Insert scene at nearest doorway", _insert_scene_at_nearest_doorway)
+	_btn("Insert scene aligned to nearest wall", _insert_scene_aligned_to_wall)
+
+	_conflict_bar = HBoxContainer.new()
+	_conflict_bar.visible = false
+	_conflict_label = Label.new()
+	_conflict_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_conflict_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_conflict_bar.add_child(_conflict_label)
+	var place_at_btn := Button.new(); place_at_btn.text = "Place at suggested"
+	place_at_btn.pressed.connect(_on_place_confirm)
+	var cancel_place_btn := Button.new(); cancel_place_btn.text = "Cancel"
+	cancel_place_btn.pressed.connect(_on_place_cancel)
+	_conflict_bar.add_child(place_at_btn)
+	_conflict_bar.add_child(cancel_place_btn)
+	add_child(_conflict_bar)
 
 	add_child(HSeparator.new())
-	var po_lbl := Label.new(); po_lbl.text = "Insert physical object:"
+	var po_lbl := Label.new(); po_lbl.text = "Insert sized body / area:"
 	add_child(po_lbl)
+	var bt_row := HBoxContainer.new()
+	var bt_lbl := Label.new(); bt_lbl.text = "Type:"
+	_body_type_option = OptionButton.new()
+	for t in ["StaticBody3D", "Area3D", "RigidBody3D", "CharacterBody3D"]:
+		_body_type_option.add_item(t)
+	bt_row.add_child(bt_lbl); bt_row.add_child(_body_type_option)
+	add_child(bt_row)
 	var po_row := HBoxContainer.new()
 	var pw_lbl := Label.new(); pw_lbl.text = "W:"
 	_phys_width = SpinBox.new()
@@ -74,7 +102,7 @@ func _ready() -> void:
 	po_row.add_child(ph_lbl); po_row.add_child(_phys_height)
 	po_row.add_child(pd_lbl); po_row.add_child(_phys_depth)
 	add_child(po_row)
-	_btn("Create physical object at cursor", _insert_physical_object)
+	_btn("Create at cursor", _insert_physical_object)
 	_btn("Create from selection (corner A/B)", _insert_physical_object_from_selection)
 
 	add_child(HSeparator.new())
@@ -139,10 +167,10 @@ func _ready() -> void:
 # --- Node placement ---
 
 ## Returns the room containing pos when "Place inside containing room" is on
-## and such a room exists; otherwise falls back to scene_query.placement_parent().
+## and such a room exists, otherwise falls back to scene_query.placement_parent().
 func _resolve_parent_for(pos: Vector3) -> Node:
 	if auto_parent_to_room:
-		var room := dock.scene_query.innermost_entity_containing(pos)
+		var room := dock.scene_query.innermost_entity_containing(pos) as SpatialEntity3D
 		if room != null:
 			return room
 	return dock.scene_query.placement_parent()
@@ -163,20 +191,110 @@ func _insert_node_at_cursor() -> void:
 	dock._say("Inserted %s at %.1f %.1f %.1f." % [n.name, dock.cursor.x, dock.cursor.y, dock.cursor.z])
 
 func _insert_scene_at_cursor() -> void:
-	var path := scene_path_edit.text.strip_edges()
-	if path.is_empty(): dock._say("Enter a scene path first."); return
-	if not ResourceLoader.exists(path): dock._say("Scene not found: %s" % path); return
-	var packed := load(path) as PackedScene
-	if packed == null: dock._say("Failed to load scene."); return
+	var packed := _load_scene_from_path()
+	if packed == null: return
 	var parent: Node = _resolve_parent_for(dock.cursor)
 	if parent == null: dock._say("No scene open."); return
+	var tf := Transform3D(Basis(), dock.cursor)
+	instantiate_aligned(packed, tf, parent, "%.1f %.1f %.1f" % [dock.cursor.x, dock.cursor.y, dock.cursor.z])
+
+## Loads the PackedScene named in scene_path_edit, or returns null and tells you why.
+func _load_scene_from_path() -> PackedScene:
+	var path := scene_path_edit.text.strip_edges()
+	if path.is_empty(): dock._say("Enter a scene path first."); return null
+	if not ResourceLoader.exists(path): dock._say("Scene not found: %s" % path); return null
+	var packed := load(path) as PackedScene
+	if packed == null: dock._say("Failed to load scene.")
+	return packed
+
+func _insert_scene_at_nearest_doorway() -> void:
+	var packed := _load_scene_from_path()
+	if packed == null: return
+	var info: Dictionary = dock.scene_query.nearest_doorway(dock.cursor)
+	if info.is_empty(): dock._say("No doorway found nearby. Move the cursor inside a room with a doorway."); return
+	var room: Room3D = info["room"]
+	var tf: Transform3D = dock.scene_query.wall_facing_transform(
+		room, info["side"], info["cu"], info["cv"])
+	instantiate_aligned(packed, tf, room,
+		"%s doorway of %s (%.1fm × %.1fm)" % [info["side"], room.name, info["width"], info["height"]])
+
+func _insert_scene_aligned_to_wall() -> void:
+	var packed := _load_scene_from_path()
+	if packed == null: return
+	var room := dock.scene_query.entity_containing(dock.cursor) as Room3D
+	if room == null: dock._say("Cursor is not inside a room."); return
+	var side: String = dock.scene_query.nearest_wall_side(room, dock.cursor)
+	var uv: Vector2 = dock.scene_query.wall_uv_from_world(room, side, dock.cursor)
+	var tf: Transform3D = dock.scene_query.wall_facing_transform(room, side, uv.x, uv.y)
+	instantiate_aligned(packed, tf, room, "%s wall of %s" % [side, room.name])
+
+## Instantiates packed under parent at tf, with these collision behaviors:
+##   - no collision: place normally.
+##   - colliding + Shift held: place anyway with a warning.
+##   - colliding + no Shift: search for the nearest fit, hold the placement in
+##     pending state, show the confirm bar so you can accept or cancel.
+##   - colliding + no fit found: refuse + error.
+## Probes collision on an un-parented instance, then re-instantiates fresh
+## on commit, so a refused/cancelled scene never appears in the tree.
+func instantiate_aligned(packed: PackedScene, tf: Transform3D, parent: Node, where: String) -> void:
 	var owner_node: Node = dock.scene_query.edited_root()
+	var probe := packed.instantiate()
+	if not probe is Node3D:
+		parent.add_child(probe)
+		probe.owner = owner_node
+		dock._say("Inserted %s at %s (no Node3D root, transform skipped)." % [probe.name, where])
+		return
+	var n3d := probe as Node3D
+	n3d.transform.basis = tf.basis  # orient probe shape before the collision query
+	var result: Dictionary = dock.scene_query.check_placement(n3d, tf.origin)
+	var collides: bool = result.get("collides", false)
+	if not collides:
+		probe.queue_free()
+		_commit_place(packed, tf, parent, owner_node, where)
+		return
+	if Input.is_key_pressed(KEY_SHIFT):
+		probe.queue_free()
+		dock._say("Warning: overlaps %s, placing anyway (Shift held)." % result["collider_name"])
+		_commit_place(packed, tf, parent, owner_node, where)
+		return
+	var suggested = dock.scene_query.find_fit_position(n3d, tf.origin, 5.0)
+	probe.queue_free()
+	if suggested == null:
+		dock._say_err("Cannot place at %s: blocked by %s and no clear spot found within 5m. Hold Shift to force." % [where, result["collider_name"]])
+		return
+	var delta: Vector3 = (suggested as Vector3) - tf.origin
+	_pending_placement = {
+		"packed": packed, "tf": Transform3D(tf.basis, suggested as Vector3),
+		"parent": parent, "owner": owner_node,
+		"where": where, "delta": delta,
+	}
+	var name_part: String = packed.resource_path.get_file() if packed.resource_path != "" else "scene"
+	var offset_str: String = SceneQuery.describe_offset(delta)
+	_conflict_label.text = "%s would collide with %s. Suggested: %s." % [name_part, result["collider_name"], offset_str]
+	_conflict_bar.visible = true
+	dock._say("%s would collide with %s. Suggested spot is %s. Confirm or cancel." % [name_part, result["collider_name"], offset_str])
+
+func _commit_place(packed: PackedScene, tf: Transform3D, parent: Node, owner_node: Node, where: String) -> void:
 	var instance := packed.instantiate()
-	parent.add_child(instance); instance.owner = owner_node
+	parent.add_child(instance)
 	if instance is Node3D:
-		(instance as Node3D).global_position = dock.cursor
+		(instance as Node3D).global_transform = tf
 		dock.last_placed_node = instance as Node3D
-	dock._say("Inserted %s at %.1f %.1f %.1f." % [instance.name, dock.cursor.x, dock.cursor.y, dock.cursor.z])
+	instance.owner = owner_node
+	dock._say_ok("Inserted %s at %s." % [instance.name, where])
+
+func _on_place_confirm() -> void:
+	if _pending_placement.is_empty(): return
+	var p := _pending_placement
+	_pending_placement = {}
+	_conflict_bar.visible = false
+	var where_str: String = "%s (auto-moved %s)" % [p["where"], SceneQuery.describe_offset(p["delta"])]
+	_commit_place(p["packed"], p["tf"], p["parent"], p["owner"], where_str)
+
+func _on_place_cancel() -> void:
+	_pending_placement = {}
+	_conflict_bar.visible = false
+	dock._say("Placement cancelled.")
 
 # --- Floor zones ---
 
@@ -278,9 +396,14 @@ func _insert_physical_object() -> void:
 	var parent: Node = _resolve_parent_for(dock.cursor)
 	if parent == null: dock._say("No scene open."); return
 	var size := Vector3(_phys_width.value, _phys_height.value, _phys_depth.value)
-	var reason := _fit_check(dock.cursor, size)
-	if reason != "":
-		dock._say("Object (%.1f x %.1f x %.1f m) does not fit: %s." % [size.x, size.y, size.z, reason]); return
+	var type_name: String = _body_type_option.get_item_text(_body_type_option.selected)
+	if type_name != "Area3D":
+		var reason := _fit_check(dock.cursor, size)
+		if reason != "":
+			if Input.is_key_pressed(KEY_SHIFT):
+				dock._say("Warning: %s does not fit (%s), placing anyway (Shift held)." % [type_name, reason])
+			else:
+				dock._say("%s (%.1f x %.1f x %.1f m) does not fit: %s. Hold Shift to force." % [type_name, size.x, size.y, size.z, reason]); return
 	_create_physical_object(parent, dock.scene_query.edited_root(), dock.cursor, size)
 
 func _insert_physical_object_from_selection() -> void:
@@ -290,9 +413,14 @@ func _insert_physical_object_from_selection() -> void:
 	var pos := Vector3(aabb.position.x + aabb.size.x / 2.0, aabb.position.y, aabb.position.z + aabb.size.z / 2.0)
 	var parent: Node = _resolve_parent_for(pos)
 	if parent == null: dock._say("No scene open."); return
-	var reason := _fit_check(pos, aabb.size)
-	if reason != "":
-		dock._say("Object (%.1f x %.1f x %.1f m) does not fit: %s." % [aabb.size.x, aabb.size.y, aabb.size.z, reason]); return
+	var type_name: String = _body_type_option.get_item_text(_body_type_option.selected)
+	if type_name != "Area3D":
+		var reason := _fit_check(pos, aabb.size)
+		if reason != "":
+			if Input.is_key_pressed(KEY_SHIFT):
+				dock._say("Warning: %s does not fit (%s), placing anyway (Shift held)." % [type_name, reason])
+			else:
+				dock._say("%s (%.1f x %.1f x %.1f m) does not fit: %s. Hold Shift to force." % [type_name, aabb.size.x, aabb.size.y, aabb.size.z, reason]); return
 	_create_physical_object(parent, dock.scene_query.edited_root(), pos, aabb.size)
 
 func _fit_check(pos: Vector3, size: Vector3) -> String:
@@ -306,22 +434,28 @@ func _fit_check(pos: Vector3, size: Vector3) -> String:
 	return ""
 
 func _create_physical_object(parent: Node, owner_node: Node, pos: Vector3, size: Vector3) -> void:
-	var body := StaticBody3D.new()
-	body.name = "PhysicalObject%d" % (parent.get_child_count() + 1)
+	var type_name: String = _body_type_option.get_item_text(_body_type_option.selected)
+	var body := ClassDB.instantiate(type_name) as Node3D
+	if body == null: dock._say("Could not create %s." % type_name); return
+	body.name = "%s%d" % [type_name, parent.get_child_count() + 1]
 	var cs := CollisionShape3D.new()
 	var box_shape := BoxShape3D.new()
 	box_shape.size = size
 	cs.shape = box_shape
 	cs.position = Vector3(0.0, size.y / 2.0, 0.0)
-	var mi := MeshInstance3D.new()
-	var box_mesh := BoxMesh.new()
-	box_mesh.size = size
-	mi.mesh = box_mesh
-	mi.position = Vector3(0.0, size.y / 2.0, 0.0)
-	body.add_child(cs); body.add_child(mi)
+	body.add_child(cs)
+	var mi: MeshInstance3D = null
+	if type_name != "Area3D":
+		mi = MeshInstance3D.new()
+		var box_mesh := BoxMesh.new()
+		box_mesh.size = size
+		mi.mesh = box_mesh
+		mi.position = Vector3(0.0, size.y / 2.0, 0.0)
+		body.add_child(mi)
 	parent.add_child(body)
 	body.global_position = pos
-	body.owner = owner_node; cs.owner = owner_node; mi.owner = owner_node
+	body.owner = owner_node; cs.owner = owner_node
+	if mi != null: mi.owner = owner_node
 	dock.last_placed_node = body
-	dock._say("Created %.1f x %.1f x %.1f m physical object at %.1f %.1f %.1f." % \
-		[size.x, size.y, size.z, pos.x, pos.y, pos.z])
+	dock._say("Created %s (%.1f x %.1f x %.1f m) at %.1f %.1f %.1f." % \
+		[type_name, size.x, size.y, size.z, pos.x, pos.y, pos.z])

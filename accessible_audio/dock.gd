@@ -1,6 +1,15 @@
 @tool
 extends VBoxContainer
 
+# Native TTS toggle. set USE_NATIVE_TTS = true to bypass the live label
+# and route announcements through DisplayServer.tts_speak() instead.
+const USE_NATIVE_TTS: bool = false
+const TTS_VOICE_ID: String = ""    # "" = pick first English voice
+const TTS_VOLUME: int = 100         # 0-100
+const TTS_PITCH: float = 1.0       # 0.1-2.0
+const TTS_RATE: float = 1.0        # 0.1-10.0 (1.0 = normal)
+const TTS_INTERRUPT: bool = true   # true = new line interrupts prior speech
+
 var plugin: EditorPlugin
 
 # Shared state read/written by tabs
@@ -43,7 +52,27 @@ func _on_layout_changed() -> void:
 	if is_instance_valid(tab_effects):
 		tab_effects._refresh()
 
+func _tts_speak_native(msg: String) -> void:
+	if msg.is_empty():
+		return
+	if not DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH):
+		return
+	var voice_id := TTS_VOICE_ID
+	if voice_id.is_empty():
+		var en_voices := DisplayServer.tts_get_voices_for_language("en")
+		if en_voices.size() > 0:
+			voice_id = en_voices[0]
+		else:
+			var all_voices := DisplayServer.tts_get_voices()
+			if all_voices.size() > 0:
+				voice_id = String(all_voices[0].get("id", ""))
+	DisplayServer.tts_speak(msg, voice_id, TTS_VOLUME, TTS_PITCH, TTS_RATE, 0, TTS_INTERRUPT)
+
+
 func _say(msg: String) -> void:
+	if USE_NATIVE_TTS:
+		_tts_speak_native(msg)
+		return
 	# Force a change even when text repeats (AccessKit only fires on diff)
 	if announce.text == msg:
 		announce.text = msg + "\u200b"

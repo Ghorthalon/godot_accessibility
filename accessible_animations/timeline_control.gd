@@ -462,10 +462,21 @@ func _open_value_editor(anim: Animation, track: int, key_idx: int, is_insert: bo
 				var params: Array = []
 				for line: String in lines:
 					var s := line.strip_edges()
-					if not s.is_empty():
-						params.append(s)
+					if s.is_empty():
+						continue
+					# Parse GDScript literals (true, 3, 1.5, Vector3(0,2,0), "hi").
+					# Bareword fallback so cutscene authors can pass identifiers
+					# literal "null" stays null.
+					var parsed: Variant = str_to_var(s)
+					if parsed == null and s != "null":
+						parsed = s
+					params.append(parsed)
 				dlg.queue_free()
-				_commit_insert(anim, track, {"method": mname, "args": params})
+				var value := {"method": mname, "args": params}
+				if is_insert:
+					_commit_insert(anim, track, value)
+				else:
+					_commit_method(anim, track, key_idx, value)
 			)
 
 		Animation.TYPE_AUDIO:
@@ -488,7 +499,10 @@ func _open_value_editor(anim: Animation, track: int, key_idx: int, is_insert: bo
 				var stream: AudioStream = null
 				if not path.is_empty() and ResourceLoader.exists(path):
 					stream = load(path)
-				_commit_insert(anim, track, {"stream": stream, "start_offset": 0.0, "end_offset": 0.0})
+				if is_insert:
+					_commit_insert(anim, track, {"stream": stream, "start_offset": 0.0, "end_offset": 0.0})
+				else:
+					_commit_audio(anim, track, key_idx, stream)
 			)
 
 		Animation.TYPE_ANIMATION:
@@ -506,13 +520,16 @@ func _open_value_editor(anim: Animation, track: int, key_idx: int, is_insert: bo
 			dlg.confirmed.connect(func() -> void:
 				var anim_name: StringName = field.text.strip_edges()
 				dlg.queue_free()
-				_commit_insert(anim, track, anim_name)
+				if is_insert:
+					_commit_insert(anim, track, anim_name)
+				else:
+					_commit_animation(anim, track, key_idx, anim_name)
 			)
 
 	dlg.canceled.connect(func() -> void: dlg.queue_free())
 
 
-# TYPE_VALUE has many subtypes; build dynamically from the existing key's value.
+# TYPE_VALUE has many subtypes, build dynamically from the existing key's value.
 func _build_value_track_editor(vb: VBoxContainer, dlg: AcceptDialog,
 		anim: Animation, track: int, key_idx: int, is_insert: bool) -> void:
 	var cur_val: Variant = null
@@ -520,6 +537,20 @@ func _build_value_track_editor(vb: VBoxContainer, dlg: AcceptDialog,
 		cur_val = anim.track_get_key_value(track, key_idx)
 	elif anim.track_get_key_count(track) > 0:
 		cur_val = anim.track_get_key_value(track, 0)
+
+	# new empty track: nothing to infer from. Ask the user to pick a type
+	# so the first keyframe isn't silently coerced to float.
+	if cur_val == null and is_insert:
+		dlg.queue_free()
+		_pick_value_type_then_open(anim, track, key_idx, is_insert)
+		return
+
+	_build_value_track_editor_with_seed(vb, dlg, anim, track, key_idx, is_insert, cur_val)
+
+
+func _build_value_track_editor_with_seed(vb: VBoxContainer, dlg: AcceptDialog,
+		anim: Animation, track: int, key_idx: int, is_insert: bool,
+		cur_val: Variant) -> void:
 	var cur_trans := anim.track_get_key_transition(track, key_idx) if key_idx >= 0 else 1.0
 
 	if cur_val is bool:
@@ -643,6 +674,80 @@ func _commit_bezier_value(anim: Animation, track: int, key_idx: int, value: floa
 	queue_redraw()
 	dock._update_info_label()
 	dock._say("Value set to: %.4f" % value)
+
+
+func _commit_method(anim: Animation, track: int, key_idx: int, value: Dictionary) -> void:
+	var old_v: Variant = anim.track_get_key_value(track, key_idx)
+	if dock.editor_undo_redo != null:
+		dock.editor_undo_redo.create_action("Set method keyframe")
+		dock.editor_undo_redo.add_do_method(anim, &"track_set_key_value", track, key_idx, value)
+		dock.editor_undo_redo.add_undo_method(anim, &"track_set_key_value", track, key_idx, old_v)
+		dock.editor_undo_redo.commit_action()
+	else:
+		anim.track_set_key_value(track, key_idx, value)
+	queue_redraw()
+	dock._update_info_label()
+	dock._say("Method keyframe updated.")
+
+
+func _commit_audio(anim: Animation, track: int, key_idx: int, stream: AudioStream) -> void:
+	var old_stream := anim.audio_track_get_key_stream(track, key_idx)
+	if dock.editor_undo_redo != null:
+		dock.editor_undo_redo.create_action("Set audio keyframe")
+		dock.editor_undo_redo.add_do_method(anim, &"audio_track_set_key_stream", track, key_idx, stream)
+		dock.editor_undo_redo.add_undo_method(anim, &"audio_track_set_key_stream", track, key_idx, old_stream)
+		dock.editor_undo_redo.commit_action()
+	else:
+		anim.audio_track_set_key_stream(track, key_idx, stream)
+	queue_redraw()
+	dock._update_info_label()
+	dock._say("Audio keyframe updated.")
+
+
+func _commit_animation(anim: Animation, track: int, key_idx: int, anim_name: StringName) -> void:
+	var old_name := anim.animation_track_get_key_animation(track, key_idx)
+	if dock.editor_undo_redo != null:
+		dock.editor_undo_redo.create_action("Set animation keyframe")
+		dock.editor_undo_redo.add_do_method(anim, &"animation_track_set_key_animation", track, key_idx, anim_name)
+		dock.editor_undo_redo.add_undo_method(anim, &"animation_track_set_key_animation", track, key_idx, old_name)
+		dock.editor_undo_redo.commit_action()
+	else:
+		anim.animation_track_set_key_animation(track, key_idx, anim_name)
+	queue_redraw()
+	dock._update_info_label()
+	dock._say("Animation keyframe updated.")
+
+
+# Asks the user which value type the first keyframe on an empty VALUE track
+# should be, then re enters the value editor with a seeded default of that type.
+func _pick_value_type_then_open(anim: Animation, track: int, key_idx: int, is_insert: bool) -> void:
+	var dlg := AcceptDialog.new()
+	dlg.title = "Choose value type"
+	dlg.min_size = Vector2(280, 120)
+	var vb := VBoxContainer.new()
+	dlg.add_child(vb)
+	vb.add_child(dock._lbl("Value type:"))
+	var opt := OptionButton.new()
+	var labels := ["Bool", "Int", "Float", "String", "Vector2", "Vector3", "Color"]
+	for t: String in labels:
+		opt.add_item(t)
+	dock._set_a11y(opt, "Value type", "Type of the first keyframe on this track.")
+	vb.add_child(opt)
+	dock.add_child(dlg); dlg.popup_centered(); opt.grab_focus()
+	dlg.confirmed.connect(func() -> void:
+		var idx := opt.selected
+		dlg.queue_free()
+		var seeds: Array = [false, 0, 0.0, "", Vector2.ZERO, Vector3.ZERO, Color.WHITE]
+		var seed: Variant = seeds[idx]
+		var next_dlg := AcceptDialog.new()
+		next_dlg.title = "Insert Keyframe"
+		next_dlg.min_size = Vector2(320, 160)
+		var next_vb := VBoxContainer.new()
+		next_dlg.add_child(next_vb)
+		next_dlg.get_ok_button().text = "Insert"
+		_build_value_track_editor_with_seed(next_vb, next_dlg, anim, track, key_idx, is_insert, seed)
+	)
+	dlg.canceled.connect(func() -> void: dlg.queue_free())
 
 
 # Dialog field helpers

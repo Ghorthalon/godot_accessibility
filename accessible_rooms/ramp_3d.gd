@@ -15,7 +15,7 @@ extends SpatialEntity3D
 @export var height_change: float = 1.0: set = _set_hc  # vertical rise low-high
 @export var clearance: float = 2.4: set = _set_cl    # vertical clearance floor-ceiling
 
-## Which cardinal direction is the HIGH (upper) end of the ramp.
+## Which cardinal direction is the high end of the ramp.
 @export_enum("north", "south", "east", "west") var high_end: String = "north": set = _set_dir
 
 @export var surface_floor: String = "ramp": set = _set_sf

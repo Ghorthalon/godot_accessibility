@@ -84,7 +84,7 @@ func neighbor_doorway_side(_side: String) -> String:
 func has_wall(_side: String) -> bool:
 	return false
 
-## Returns descriptors for each connectable face. Each dict has
+# Returns descriptors for each connectable face. Each dict has
 ##   label: String ~ "north wall", "low end", "high end"
 ##   normal: Vector3, outward unit normal of the face
 ##   probe_world: Vector3, world point 0.05m outside the face center

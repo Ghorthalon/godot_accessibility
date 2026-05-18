@@ -12,6 +12,7 @@ extends Panel
 ##   F                       snap cursor to floor
 ##   R                       snap cursor to current room
 ##   P                       probe distances (6 directions)
+##   N                       scan nearby objects (audio + spoken summary)
 ##   L                       report cursor location
 ##   Ctrl+R                  new standalone room at cursor
 ##   Ctrl+D                  punch door at cursor (nearest wall)
@@ -31,6 +32,7 @@ signal snap_floor
 signal snap_wall(side: String)     # "north" "south" "east" "west"
 signal snap_room
 signal probe
+signal scan_nearby
 signal report_location
 signal new_standalone_room
 signal punch_door_at_cursor
@@ -111,4 +113,5 @@ func _gui_input(event: InputEvent) -> void:
 			KEY_F:     accept_event(); snap_floor.emit()
 			KEY_R:     accept_event(); snap_room.emit()
 			KEY_P:     accept_event(); probe.emit()
+			KEY_N:     accept_event(); scan_nearby.emit()
 			KEY_L:     accept_event(); report_location.emit()

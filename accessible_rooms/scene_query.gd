@@ -1,3 +1,5 @@
+# This file is becoming unwieldly and I keep adding to it at random. I need to fix this, but I might have to do a lot of refactoring when I switch from only rectangular rooms to custom shapes, so until then, I think this will be OK.
+
 @tool
 class_name SceneQuery
 extends Node
@@ -53,8 +55,6 @@ func entity_label(entity: Node) -> String:
 	return entity.name
 
 ## Returns the first SpatialEntity3D whose contains_point() returns true for p.
-## Replaces the former specific room_containing() / ramp_containing() pair
-## works for any current or future SpatialEntity3D subclass automatically. Hopefully. Maybe. Until it doesn't.
 func entity_containing(p: Vector3) -> SpatialEntity3D:
 	var root := edited_root()
 	if root == null: return null
@@ -157,6 +157,7 @@ func overlapping_at(p: Vector3) -> Array[String]:
 	var space := (root as Node3D).get_world_3d().direct_space_state
 	var params := PhysicsPointQueryParameters3D.new()
 	params.position = p
+	params.collide_with_areas = true   # so Area3Ds (triggers, zones) get announced too
 	var hits := space.intersect_point(params)
 	var labels: Array[String] = []
 	for hit in hits:
@@ -178,6 +179,67 @@ func entities_near_point(p: Vector3, radius: float) -> Array[Node]:
 		if entity_position(entity).distance_to(p) <= radius:
 			result.append(entity)
 	return result
+
+## other Node3D classes for example SteamAudio / Resonance Audio sources can
+## use the cursor's proximity tail and the nearby scan by using the
+## accessible_rooms_announce group
+const GROUP_ANNOUNCE := "accessible_rooms_announce"
+
+## User placed point Node3Ds without collision shape within radius metres of p,
+## sorted nearest first. Skips SpatialEntity3D containers, handled by
+## entities_containing_sorted, and CollisionObject3D, handled by overlapping_at
+## so the cursor report doesn't announce them twice.
+## other classes can join in via the accessible_rooms_announce group.
+func nearby_point_nodes(p: Vector3, radius: float) -> Array[Node3D]:
+	var root := edited_root()
+	if root == null: return []
+	var result: Array[Node3D] = []
+	_collect_nearby(root, p, radius, root, result, false)
+	result.sort_custom(func(a: Node3D, b: Node3D) -> bool:
+		return a.global_position.distance_to(p) < b.global_position.distance_to(p))
+	return result
+
+## Superset of nearby_point_nodes that also includes CollisionObject3D
+## (PhysicsBody3D, Area3D). Used by the cursor scan feature sorted nearest first.
+## SpatialEntity3D containers stay excluded, their centres aren't useful sound sources.
+## At some point this should probably be cleaned up, it looks to me like there's a lot of duplicated code. But I'd rather make it right, then make it nice. 
+func nearby_placeable_nodes(p: Vector3, radius: float) -> Array[Node3D]:
+	var root := edited_root()
+	if root == null: return []
+	var result: Array[Node3D] = []
+	_collect_nearby(root, p, radius, root, result, true)
+	result.sort_custom(func(a: Node3D, b: Node3D) -> bool:
+		return a.global_position.distance_to(p) < b.global_position.distance_to(p))
+	return result
+
+func _collect_nearby(node: Node, p: Vector3, radius: float,
+		root: Node, out: Array[Node3D], include_collision: bool) -> void:
+	if node.has_meta("generated"): return
+	if node is SpatialEntity3D:
+		# Don't collect the container itself, do recurse so placed children are found.
+		for child in node.get_children():
+			_collect_nearby(child, p, radius, root, out, include_collision)
+		return
+	if node != root and node is Node3D and _is_placeable(node, root, include_collision):
+		var n3 := node as Node3D
+		if n3.global_position.distance_to(p) <= radius:
+			out.append(n3)
+		return  # Treat the placed node as a unit, don't recurse into its subtree.
+	for child in node.get_children():
+		_collect_nearby(child, p, radius, root, out, include_collision)
+
+func _is_placeable(node: Node, root: Node, include_collision: bool) -> bool:
+	if node.is_in_group(GROUP_ANNOUNCE): return true
+	if node is CollisionObject3D:
+		return include_collision
+	if node is AudioStreamPlayer3D: return true
+	if node is Marker3D: return true
+	if node is Light3D: return true
+	if node is GPUParticles3D: return true
+	# Generic Node3D placed at the scene root or inside a SpatialEntity3D.
+	# Catches user inserted Node3D and PackedScene roots.
+	var parent := node.get_parent()
+	return parent == root or parent is SpatialEntity3D
 
 # Nearest entity in the forward half space of dir from the given position.
 func nearest_in_direction(from: Vector3, dir: Vector3) -> Node:
@@ -329,8 +391,8 @@ func wall_gap(from: Vector3, dir: Vector3, max_dist := 30.0) -> Dictionary:
 	if ha == null or hb == null: return {}
 	return {"hit_a": ha, "hit_b": hb, "midpoint": ((ha as Vector3) + (hb as Vector3)) / 2.0, "gap": (ha as Vector3).distance_to(hb as Vector3)}
 
-## Returns {side, world_pos, width, height} for the nearest doorway opening to near_pos, or {}.
-## Searches all walls of the room containing near_pos.
+## Returns {room, side, world_pos, width, height, cu, cv} for the nearest doorway
+## opening to near_pos, or {}. Searches all walls of the room containing near_pos.
 func nearest_doorway(near_pos: Vector3) -> Dictionary:
 	var room := entity_containing(near_pos) as Room3D
 	if room == null: return {}
@@ -346,7 +408,9 @@ func nearest_doorway(near_pos: Vector3) -> Dictionary:
 			var d := near_pos.distance_to(wpos)
 			if d < best_dist:
 				best_dist = d
-				best = {"side": side, "world_pos": wpos, "width": opening.size.x, "height": opening.size.y}
+				best = {"room": room, "side": side, "world_pos": wpos,
+						"width": opening.size.x, "height": opening.size.y,
+						"cu": cu, "cv": cv}
 	return best
 
 ## Returns distances in all 6 cardinal directions from from as a Dictionary.
@@ -372,6 +436,45 @@ func _doorway_world_pos(room: Room3D, side: String, cu: float, cv: float) -> Vec
 		"east":  wall_center = Vector3( room.size.x / 2.0, room.size.y / 2.0, 0); bu = Vector3.FORWARD
 		"west":  wall_center = Vector3(-room.size.x / 2.0, room.size.y / 2.0, 0); bu = Vector3.FORWARD
 	return room.position + wall_center + bu * cu + Vector3.UP * cv
+
+## Returns a world Transform3D for the wall point at (cu, cv) on the named side of room.
+## Position is the wall-local point; -Z (Godot's local forward) faces into the room interior.
+## Generic primitive for placing any wall-aligned scene: doors, windows, paintings,
+## light switches, signs. Pair with nearest_doorway() or any (room, side, cu, cv) source.
+func wall_facing_transform(room: Room3D, side: String, cu: float, cv: float) -> Transform3D:
+	var origin: Vector3 = _doorway_world_pos(room, side, cu, cv)
+	var inward: Vector3
+	match side:
+		"north": inward = Vector3.BACK
+		"south": inward = Vector3.FORWARD
+		"east":  inward = Vector3.LEFT
+		"west":  inward = Vector3.RIGHT
+		_: return Transform3D(Basis(), origin)
+	return Transform3D(Basis.looking_at(inward, Vector3.UP), origin)
+
+## Returns the cardinal side of room whose wall plane is closest to p.
+## Generic helper for wall-aligned operations.
+func nearest_wall_side(room: Room3D, p: Vector3) -> String:
+	var dists := {
+		"north": absf(p.z - (room.position.z - room.size.z / 2.0)),
+		"south": absf(p.z - (room.position.z + room.size.z / 2.0)),
+		"east":  absf(p.x - (room.position.x + room.size.x / 2.0)),
+		"west":  absf(p.x - (room.position.x - room.size.x / 2.0)),
+	}
+	var best := "north"
+	for s in dists:
+		if dists[s] < dists[best]: best = s
+	return best
+
+## Returns (cu, cv) for an arbitrary world point projected onto the named wall of room.
+## Inverse of _doorway_world_pos's (cu, cv) → world map.
+func wall_uv_from_world(room: Room3D, side: String, p: Vector3) -> Vector2:
+	var cu: float = 0.0
+	match side:
+		"north", "south": cu = p.x - room.position.x
+		"east", "west":   cu = room.position.z - p.z
+	var cv: float = p.y - (room.position.y + room.size.y / 2.0)
+	return Vector2(cu, cv)
 
 ## Walks node and its descendants to find the first CollisionShape3D.
 func find_collision_shape(node: Node) -> CollisionShape3D:
@@ -414,6 +517,45 @@ func check_placement(node: Node3D, target_pos: Vector3) -> Dictionary:
 	if collider is Node:
 		collider_name = entity_label(collider as Node)
 	return {"collides": true, "collider_name": collider_name}
+
+## Searches for a nearby position where node's collision shape fits without overlap.
+## Returns the chosen Vector3 or null if no clearance found within max_radius metres.
+## Strategy: try floor-snap first (handles air-floating), then expanding cardinal shells,
+## then their floor-snapped variants (handles "embedded in a wall above floor").
+## node may or may not be in the tree; check_placement works in both states.
+func find_fit_position(node: Node3D, start_pos: Vector3, max_radius: float = 5.0) -> Variant:
+	if not check_placement(node, start_pos).get("collides", false):
+		return start_pos
+	var candidates: Array[Vector3] = []
+	var floor_y = raycast_down(start_pos)
+	if floor_y != null:
+		candidates.append(Vector3(start_pos.x, floor_y, start_pos.z))
+	var dirs := [Vector3.UP, Vector3.RIGHT, Vector3.LEFT, Vector3.BACK, Vector3.FORWARD, Vector3.DOWN]
+	var step := 0.25
+	while step <= max_radius:
+		for dir: Vector3 in dirs:
+			candidates.append(start_pos + dir * step)
+		step *= 2.0
+	for c: Vector3 in candidates:
+		if not check_placement(node, c).get("collides", false):
+			return c
+		var cf = raycast_down(c)
+		if cf != null:
+			var cfp := Vector3(c.x, cf, c.z)
+			if not check_placement(node, cfp).get("collides", false):
+				return cfp
+	return null
+
+## Describes delta as a short cardinal phrase ("1.5m east, 0.5m up"). For UI/audio messages.
+static func describe_offset(delta: Vector3) -> String:
+	var parts: Array[String] = []
+	if absf(delta.x) >= 0.05:
+		parts.append("%.1fm %s" % [absf(delta.x), "east" if delta.x > 0.0 else "west"])
+	if absf(delta.z) >= 0.05:
+		parts.append("%.1fm %s" % [absf(delta.z), "south" if delta.z > 0.0 else "north"])
+	if absf(delta.y) >= 0.05:
+		parts.append("%.1fm %s" % [absf(delta.y), "up" if delta.y > 0.0 else "down"])
+	return ", ".join(parts) if not parts.is_empty() else "same spot"
 
 static func aabbs_overlap(a_pos: Vector3, a_size: Vector3, b_pos: Vector3, b_size: Vector3) -> bool:
 	return (a_pos.x - a_size.x/2) < (b_pos.x + b_size.x/2) and \

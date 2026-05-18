@@ -295,7 +295,6 @@ func _make_door_placeholder(room: Room3D, side: String, cu: float, cv: float, w:
 	if not create_door_placeholder.button_pressed: return
 	var scene_root: Node = dock.scene_query.edited_root()
 	if scene_root == null: return
-	var world_pos: Vector3 = dock.scene_query._doorway_world_pos(room, side, cu, cv)
 	var placeholder := Node3D.new()
 	placeholder.name = "DoorPlaceholder_%s" % side
 	placeholder.set_meta("door_placeholder", true)
@@ -304,8 +303,8 @@ func _make_door_placeholder(room: Room3D, side: String, cu: float, cv: float, w:
 	box.size = Vector3(w, h, 0.1)
 	mesh_inst.mesh = box
 	placeholder.add_child(mesh_inst)
-	placeholder.position = world_pos
 	room.add_child(placeholder)
+	placeholder.global_transform = dock.scene_query.wall_facing_transform(room, side, cu, cv)
 	placeholder.owner = scene_root
 	mesh_inst.owner = scene_root
 	placeholder.visible = false
@@ -537,7 +536,8 @@ func _refresh_door_list() -> void:
 	for i in room.door_list.size():
 		var d: DoorEntry = room.door_list[i]
 		var name_part := ("\"%s\" " % d.label) if d.label != "" else ""
-		_door_item_list.add_item("[%d] %s%s  U:%.2f V:%.2f  %.1f×%.1fm" % [i, name_part, d.side, d.center_u, d.center_v, d.width, d.height])
+		var scene_part := " [filled]" if d.scene_path != "" else " [empty]"
+		_door_item_list.add_item("[%d] %s%s  U:%.2f V:%.2f  %.1f×%.1fm%s" % [i, name_part, d.side, d.center_u, d.center_v, d.width, d.height, scene_part])
 		_door_item_list.set_item_metadata(i, i)
 
 func _on_door_select(i: int) -> void:
@@ -567,6 +567,18 @@ func _on_door_select(i: int) -> void:
 	SpatialEntity3D._add_spinbox(_door_props_container, "V (vert):", -50.0, 50.0, 0.1, d.center_v)
 	SpatialEntity3D._add_spinbox(_door_props_container, "W:", 0.5, 20.0, 0.1, d.width)
 	SpatialEntity3D._add_spinbox(_door_props_container, "H:", 0.5, 20.0, 0.1, d.height)
+	var scene_row := HBoxContainer.new()
+	var scene_lbl := Label.new(); scene_lbl.text = "Scene:"
+	var scene_edit := LineEdit.new()
+	scene_edit.text = d.scene_path
+	scene_edit.placeholder_text = "res://path/to/door.tscn"
+	scene_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scene_row.add_child(scene_lbl); scene_row.add_child(scene_edit)
+	_door_props_container.add_child(scene_row)
+	var place_btn := Button.new()
+	place_btn.text = "Place scene at this door"
+	place_btn.pressed.connect(_place_door_scene)
+	_door_props_container.add_child(place_btn)
 
 func _apply_door_changes() -> void:
 	if not dock.current_entity is Room3D or _current_door_idx < 0:
@@ -581,15 +593,38 @@ func _apply_door_changes() -> void:
 	var side_opt := children[1].get_child(1) as OptionButton
 	d.side = side_opt.get_item_text(side_opt.selected)
 	var spins: Array[SpinBox] = []
+	var scene_edit: LineEdit = null
 	for row in children.slice(2):
+		if not row is Container: continue
 		for c in row.get_children():
 			if c is SpinBox: spins.append(c)
+			elif c is LineEdit: scene_edit = c
 	if spins.size() >= 4:
 		d.center_u = spins[0].value; d.center_v = spins[1].value
 		d.width = spins[2].value; d.height = spins[3].value
+	if scene_edit != null: d.scene_path = scene_edit.text.strip_edges()
 	room._queue_rebuild()
 	_refresh_door_list()
 	dock._say("Door %d on %s updated." % [_current_door_idx, room.name])
+
+func _place_door_scene() -> void:
+	if not dock.current_entity is Room3D or _current_door_idx < 0:
+		dock._say("No door selected."); return
+	var room := dock.current_entity as Room3D
+	if _current_door_idx >= room.door_list.size():
+		dock._say("Door index out of range."); return
+	# Persist any pending field edits (including scene path) before placing.
+	_apply_door_changes()
+	var d: DoorEntry = room.door_list[_current_door_idx]
+	if d.scene_path == "":
+		dock._say("Set a scene path on this door first."); return
+	if not ResourceLoader.exists(d.scene_path):
+		dock._say_err("Scene not found: %s" % d.scene_path); return
+	var packed := load(d.scene_path) as PackedScene
+	if packed == null: dock._say_err("Failed to load scene."); return
+	var tf: Transform3D = dock.scene_query.wall_facing_transform(room, d.side, d.center_u, d.center_v)
+	dock.tab_place.instantiate_aligned(packed, tf, room,
+		"door %d (%s wall of %s)" % [_current_door_idx, d.side, room.name])
 
 func _remove_selected_door() -> void:
 	if not dock.current_entity is Room3D or _current_door_idx < 0:
@@ -633,7 +668,7 @@ func _refresh_wall_list() -> void:
 	for side in ["north", "south", "east", "west", "floor", "ceiling"]:
 		var wc: WallConfig = room.cfg(side)
 		var state := "on" if wc.enabled else "off"
-		_wall_item_list.add_item("%s, %s (%s)" % [side, wc.surface, state])
+		_wall_item_list.add_item("%s, %s, %.2fm (%s)" % [side, wc.surface, wc.thickness, state])
 		_wall_item_list.set_item_metadata(_wall_item_list.item_count - 1, side)
 
 func _on_wall_select(i: int) -> void:
@@ -654,7 +689,8 @@ func _on_wall_select(i: int) -> void:
 	surf_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	surf_row.add_child(surf_lbl); surf_row.add_child(surf_edit)
 	_wall_props_container.add_child(surf_row)
-	dock._say("Selected %s wall, surface: %s, %s." % [_current_wall_side, wc.surface, "enabled" if wc.enabled else "disabled"])
+	SpatialEntity3D._add_spinbox(_wall_props_container, "Thickness (m):", 0.05, 5.0, 0.05, wc.thickness)
+	dock._say("Selected %s wall, surface: %s, thickness: %.2fm, %s." % [_current_wall_side, wc.surface, wc.thickness, "enabled" if wc.enabled else "disabled"])
 
 func _apply_wall_changes() -> void:
 	if not dock.current_entity is Room3D or _current_wall_side == "":
@@ -662,18 +698,23 @@ func _apply_wall_changes() -> void:
 	var room := dock.current_entity as Room3D
 	var wc: WallConfig = room.cfg(_current_wall_side)
 	var children := _wall_props_container.get_children()
-	if children.size() < 2: dock._say("Wall controls not ready."); return
+	if children.size() < 3: dock._say("Wall controls not ready."); return
 	var enabled_cb := children[0] as CheckBox
 	var surf_row := children[1]
+	var thickness_row := children[2]
 	var surf_edit: LineEdit
 	for c in surf_row.get_children():
 		if c is LineEdit: surf_edit = c; break
-	if enabled_cb == null or surf_edit == null: return
+	var thickness_spin: SpinBox
+	for c in thickness_row.get_children():
+		if c is SpinBox: thickness_spin = c; break
+	if enabled_cb == null or surf_edit == null or thickness_spin == null: return
 	wc.enabled = enabled_cb.button_pressed
 	wc.surface = surf_edit.text.strip_edges()
+	wc.thickness = thickness_spin.value
 	room._queue_rebuild()
 	_refresh_wall_list()
-	dock._say("%s wall updated, surface: %s, %s." % [_current_wall_side, wc.surface, "enabled" if wc.enabled else "disabled"])
+	dock._say("%s wall updated, surface: %s, thickness: %.2fm, %s." % [_current_wall_side, wc.surface, wc.thickness, "enabled" if wc.enabled else "disabled"])
 
 func _build_anchor_ui_into(c: VBoxContainer) -> void:
 	var anchor_lbl := Label.new()

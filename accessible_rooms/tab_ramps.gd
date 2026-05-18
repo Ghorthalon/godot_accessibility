@@ -112,7 +112,7 @@ func _add_ramp(side: String) -> void:
 
 	_apply_surface_settings(r)
 	root.add_child(r)
-	r.owner = root
+	r.owner = dock.scene_query.edited_root()
 	r.position = ramp_pos
 
 	var cv: float = -room.size.y / 2.0 + _door_h / 2.0
@@ -158,7 +158,7 @@ func _new_standalone_ramp() -> void:
 
 	_apply_surface_settings(r)
 	root.add_child(r)
-	r.owner = root
+	r.owner = dock.scene_query.edited_root()
 	r.position = dock.cursor
 	r.rebuild()
 

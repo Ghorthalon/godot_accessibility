@@ -119,7 +119,7 @@ func _add_stairs(side: String) -> void:
 
 	_apply_surface_settings(s)
 	root.add_child(s)
-	s.owner = root
+	s.owner = dock.scene_query.edited_root()
 	s.position = stairs_pos
 
 	var cv: float = -room.size.y / 2.0 + _door_h / 2.0
@@ -168,7 +168,7 @@ func _new_standalone_stairs() -> void:
 
 	_apply_surface_settings(s)
 	root.add_child(s)
-	s.owner = root
+	s.owner = dock.scene_query.edited_root()
 	s.position = dock.cursor
 	s.rebuild()
 

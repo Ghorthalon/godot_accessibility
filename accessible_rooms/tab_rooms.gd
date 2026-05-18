@@ -5,6 +5,8 @@ var dock  # reference to parent dock (dock.gd)
 
 var new_w: SpinBox; var new_h: SpinBox; var new_d: SpinBox
 var resize_w: SpinBox; var resize_h: SpinBox; var resize_d: SpinBox
+var move_x: SpinBox; var move_y: SpinBox; var move_z: SpinBox
+var _move_cascade_checkbox: CheckBox
 var door_w: SpinBox; var door_h: SpinBox
 var room_list: ItemList
 var _resize_container: VBoxContainer
@@ -67,6 +69,25 @@ func _ready() -> void:
 	_btn_into(rooms_tab, "Measure space at cursor", _measure_space_at_cursor)
 	_btn_into(rooms_tab, "Resize room to fill E\u2194W", _resize_fill_ew)
 	_btn_into(rooms_tab, "Resize room to fill N\u2194S", _resize_fill_ns)
+
+	rooms_tab.add_child(HSeparator.new())
+
+	var ml := Label.new(); ml.text = "Move selected room to (m):"
+	rooms_tab.add_child(ml)
+	move_x = _spinbox(-1000.0, 1000.0, 0.5, 0.0)
+	move_y = _spinbox(-1000.0, 1000.0, 0.5, 0.0)
+	move_z = _spinbox(-1000.0, 1000.0, 0.5, 0.0)
+	var mr := HBoxContainer.new()
+	for pair in [["X:", move_x], ["Y:", move_y], ["Z:", move_z]]:
+		var lbl := Label.new(); lbl.text = pair[0]
+		mr.add_child(lbl); mr.add_child(pair[1])
+	rooms_tab.add_child(mr)
+	_move_cascade_checkbox = CheckBox.new()
+	_move_cascade_checkbox.text = "Cascade: drag connected rooms"
+	_move_cascade_checkbox.tooltip_text = "Translate every room flush-connected to this one by the same delta, keeps L-shaped layouts connected"
+	rooms_tab.add_child(_move_cascade_checkbox)
+	_btn_into(rooms_tab, "Set from cursor", _move_set_from_cursor)
+	_btn_into(rooms_tab, "Apply move", _apply_move)
 
 	rooms_tab.add_child(HSeparator.new())
 
@@ -379,6 +400,10 @@ func _on_select(i: int) -> void:
 		child.queue_free()
 	await get_tree().process_frame
 	entity.populate_properties_ui(_resize_container)
+	if entity is Room3D:
+		move_x.value = (entity as Node3D).position.x
+		move_y.value = (entity as Node3D).position.y
+		move_z.value = (entity as Node3D).position.z
 	dock._say("Selected %s." % dock.scene_query.entity_label(entity))
 	dock.play_audio_3d("object", (entity as Node3D).global_position)
 	_refresh_door_list()
@@ -858,6 +883,166 @@ func _on_resize_cancel() -> void:
 	_pending_resize = {}
 	_resize_conflict_bar.visible = false
 	dock._say("Resize cancelled.")
+
+# --- Move room ---
+
+func _move_set_from_cursor() -> void:
+	move_x.value = dock.cursor.x
+	move_y.value = dock.cursor.y
+	move_z.value = dock.cursor.z
+	dock._say("Move target set to cursor: (%.1f, %.1f, %.1f)." % \
+			[dock.cursor.x, dock.cursor.y, dock.cursor.z])
+
+func _apply_move() -> void:
+	if not dock.current_entity is Room3D:
+		dock._say_err("Select a room first."); return
+	var room := dock.current_entity as Room3D
+	var root: Node = dock.scene_query.placement_parent()
+	if root == null: dock._say_err("No scene open."); return
+
+	var new_pos := Vector3(move_x.value, move_y.value, move_z.value)
+	var delta := new_pos - room.position
+	if delta.length() < Room3D.EPSILON:
+		dock._say("Room already at target position."); return
+
+	var cascade_moves: Array = []
+	if _move_cascade_checkbox.button_pressed:
+		cascade_moves = _collect_move_cascade(room, delta, root, [room])
+
+	var shift_held := Input.is_key_pressed(KEY_SHIFT)
+
+	var overlap_conflicts := _check_all_overlaps(room, new_pos, room.size, cascade_moves, root)
+	if not overlap_conflicts.is_empty():
+		var names := ", ".join(overlap_conflicts.map(func(r): return (r as Room3D).name))
+		if not shift_held:
+			dock._say_err("Cannot move room: would overlap with %s. Hold Shift to force." % names)
+			return
+		dock._say("Warning: overlaps with %s, moving anyway (Shift held)." % names)
+
+	var broken := _check_connections_after_move(room, new_pos, cascade_moves, root)
+	if not broken.is_empty():
+		var msg := ", ".join(broken.map(func(b): return "%s (%s wall)" % [b["neighbor"].name, b["side"]]))
+		if not shift_held:
+			dock._say_err("Cannot move room: connection to %s would break. Hold Shift to force." % msg)
+			return
+		dock._say("Warning: connection to %s broken, moving anyway (Shift held)." % msg)
+
+	_execute_move(room, new_pos, cascade_moves)
+
+func _collect_move_cascade(room: Room3D, delta: Vector3, root: Node, visited: Array) -> Array:
+	var result: Array = []
+	for side in ["north", "south", "east", "west"]:
+		for neighbor: Room3D in dock.scene_query.rooms_flush_with_wall(room, side, root):
+			if neighbor in visited: continue
+			visited.append(neighbor)
+			var n_new_pos := neighbor.position + delta
+			result.append({"room": neighbor, "new_pos": n_new_pos})
+			var sub := _collect_move_cascade(neighbor, delta, root, visited)
+			for m in sub:
+				result = result.filter(func(sr): return sr["room"] != m["room"])
+				result.append(m)
+	return result
+
+func _check_connections_after_move(primary: Room3D, new_pos: Vector3,
+		cascade_moves: Array, root: Node) -> Array:
+	var moving: Dictionary = {primary: new_pos}
+	for m in cascade_moves: moving[m["room"]] = m["new_pos"]
+
+	var broken_keys: Dictionary = {}
+	var broken: Array = []
+	for moved_room: Room3D in moving.keys():
+		var moved_new_pos: Vector3 = moving[moved_room]
+		for side in ["north", "south", "east", "west"]:
+			for neighbor: Room3D in dock.scene_query.rooms_flush_with_wall(moved_room, side, root):
+				if neighbor in moving: continue
+				var current_overlap := moved_room._compute_wall_local_overlap(side, neighbor)
+				if current_overlap.size.x <= SpatialEntity3D.EPSILON: continue
+				for d: DoorEntry in moved_room.door_list:
+					if d.side != side: continue
+					var door_rect := Rect2(d.center_u - d.width / 2.0,
+							d.center_v - d.height / 2.0, d.width, d.height)
+					if not door_rect.intersects(current_overlap): continue
+					if not _door_still_connects(moved_room, moved_new_pos, side, d, neighbor):
+						var key := "%s::%s::%s" % [moved_room.name, neighbor.name, side]
+						if broken_keys.has(key): continue
+						broken_keys[key] = true
+						broken.append({"from": moved_room, "side": side, "neighbor": neighbor})
+	return broken
+
+func _door_still_connects(room: Room3D, room_new_pos: Vector3, side: String,
+		d: DoorEntry, neighbor: Room3D) -> bool:
+	var new_plane := _wall_plane_coord_at(room, side, room_new_pos)
+	var neighbor_plane := Room3D._wall_plane_coord(neighbor, _opposite_side(side))
+	if absf(new_plane - neighbor_plane) > SpatialEntity3D.EPSILON:
+		return false
+	var dx := room_new_pos.x - room.position.x
+	var dz := room_new_pos.z - room.position.z
+	var new_cu := d.center_u
+	if side in ["north", "south"]:
+		new_cu -= dx
+	else:
+		new_cu += dz
+	var new_overlap := _compute_wall_local_overlap_at(room, side, room_new_pos, neighbor)
+	if new_overlap.size.x <= SpatialEntity3D.EPSILON: return false
+	if new_overlap.size.y <= SpatialEntity3D.EPSILON: return false
+	var new_door_rect := Rect2(new_cu - d.width / 2.0,
+			d.center_v - d.height / 2.0, d.width, d.height)
+	return new_door_rect.intersects(new_overlap)
+
+static func _opposite_side(side: String) -> String:
+	match side:
+		"north": return "south"
+		"south": return "north"
+		"east":  return "west"
+		"west":  return "east"
+	return ""
+
+static func _wall_plane_coord_at(room: Room3D, side: String, pos: Vector3) -> float:
+	match side:
+		"north": return pos.z - room.size.z / 2.0
+		"south": return pos.z + room.size.z / 2.0
+		"east":  return pos.x + room.size.x / 2.0
+		"west":  return pos.x - room.size.x / 2.0
+	return 0.0
+
+static func _compute_wall_local_overlap_at(room: Room3D, side: String,
+		room_pos: Vector3, other: Room3D) -> Rect2:
+	# Mirrors Room3D._compute_wall_local_overlap but for a hypothetical room_pos.
+	var world_y_lo := maxf(room_pos.y, other.position.y)
+	var world_y_hi := minf(room_pos.y + room.size.y, other.position.y + other.size.y)
+	if world_y_hi - world_y_lo <= SpatialEntity3D.EPSILON: return Rect2()
+	var wall_centre_y := room_pos.y + room.size.y / 2.0
+	var v_lo := world_y_lo - wall_centre_y
+	var v_hi := world_y_hi - wall_centre_y
+	match side:
+		"north", "south":
+			var x_lo := maxf(room_pos.x - room.size.x / 2.0, other.position.x - other.size.x / 2.0)
+			var x_hi := minf(room_pos.x + room.size.x / 2.0, other.position.x + other.size.x / 2.0)
+			if x_hi - x_lo <= SpatialEntity3D.EPSILON: return Rect2()
+			return Rect2(x_lo - room_pos.x, v_lo, x_hi - x_lo, v_hi - v_lo)
+		"east", "west":
+			var z_lo := maxf(room_pos.z - room.size.z / 2.0, other.position.z - other.size.z / 2.0)
+			var z_hi := minf(room_pos.z + room.size.z / 2.0, other.position.z + other.size.z / 2.0)
+			if z_hi - z_lo <= SpatialEntity3D.EPSILON: return Rect2()
+			return Rect2(room_pos.z - z_hi, v_lo, z_hi - z_lo, v_hi - v_lo)
+	return Rect2()
+
+func _execute_move(room: Room3D, new_pos: Vector3, cascade_moves: Array) -> void:
+	_adjust_doors_for_resize(room, new_pos, room.size)
+	for m in cascade_moves:
+		_adjust_doors_for_resize(m["room"], m["new_pos"], m["room"].size)
+	room.position = new_pos
+	for m in cascade_moves:
+		(m["room"] as Room3D).position = m["new_pos"]
+	move_x.value = new_pos.x
+	move_y.value = new_pos.y
+	move_z.value = new_pos.z
+	_refresh()
+	var msg := "Moved %s to (%.1f, %.1f, %.1f)." % [room.name, new_pos.x, new_pos.y, new_pos.z]
+	if not cascade_moves.is_empty():
+		msg += " Dragged %d connected room%s along." % \
+				[cascade_moves.size(), "s" if cascade_moves.size() != 1 else ""]
+	dock._say_ok(msg)
 
 func _auto_anchor() -> void:
 	if not dock.current_entity is Room3D: dock._say("No room selected."); return

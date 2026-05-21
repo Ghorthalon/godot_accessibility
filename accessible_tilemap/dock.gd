@@ -62,3 +62,21 @@ func _on_tab_changed(idx: int) -> void:
 	if tab.has_method(&"grab_entry_focus"):
 		pass
 		# tab.call_deferred(&"grab_entry_focus")
+
+
+func _set_tileset_resource(ts: TileSet) -> void:
+	if _atlas_tab == null:
+		return
+	if _tabs != null:
+		_tabs.current_tab = _atlas_tab.get_index()
+	_atlas_tab._set_tileset_resource(ts)
+
+
+func _set_tileset_from_layer(layer: TileMapLayer) -> void:
+	if _atlas_tab == null:
+		return
+	_atlas_tab._set_tileset_from_layer(layer)
+
+
+func _is_in_resource_mode() -> bool:
+	return _atlas_tab != null and _atlas_tab._in_resource_mode

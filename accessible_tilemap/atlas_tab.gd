@@ -1,6 +1,8 @@
 @tool
 extends VBoxContainer
 
+const PolygonEditorDialog := preload("res://addons/accessible_tilemap/polygon_editor_dialog.gd")
+
 const _LAYER_TYPES: Array = [
 	["String", TYPE_STRING],
 	["Bool",   TYPE_BOOL],
@@ -14,19 +16,20 @@ var editor_undo_redo: EditorUndoRedoManager
 
 var _tileset: TileSet
 var _tileset_path: String = ""
+var _in_resource_mode: bool = false
 
 # UI controls
 var _status_label: Label
-var _load_path_field: LineEdit
-var _load_button: Button
-var _pull_selection_button: Button
+var _save_btn: Button
 var _layer_list: ItemList
 var _source_option: OptionButton
 var _tile_list: ItemList
 var _tile_info_label: RichTextLabel
 var _custom_data_container: VBoxContainer
 var _physics_layer_list: ItemList
+var _navigation_layer_list: ItemList
 var _collision_container: VBoxContainer
+var _navigation_container: VBoxContainer
 var _add_scene_tile_button: Button
 var _remove_tile_button: Button
 
@@ -69,47 +72,20 @@ func _build_ui() -> void:
 	var new_ts_btn := Button.new()
 	new_ts_btn.text = "New TileSet..."
 	_set_a11y(new_ts_btn, "New TileSet",
-		"Create a new empty TileSet and save it to a .tres path.")
+		"Create a new empty TileSet and assign it to the selected TileMapLayer.")
 	new_ts_btn.pressed.connect(_on_new_tileset_pressed)
 	ts_row.add_child(new_ts_btn)
 
-	var save_ts_btn := Button.new()
-	save_ts_btn.text = "Save TileSet"
-	_set_a11y(save_ts_btn, "Save TileSet",
-		"Save the current TileSet back to its .tres file on disk.")
-	save_ts_btn.pressed.connect(_on_save_tileset_pressed)
-	ts_row.add_child(save_ts_btn)
+	_save_btn = Button.new()
+	_save_btn.text = "Save Resource"
+	_set_a11y(_save_btn, "Save TileSet resource",
+		"Write changes to the .tres file on disk.")
+	_save_btn.visible = false
+	_save_btn.pressed.connect(_on_save_resource_pressed)
+	ts_row.add_child(_save_btn)
 
 	_status_label = _make_label(root, "No TileSet loaded.")
 	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-
-	# Load controls
-	_make_label(root, "Load existing TileSet from path (.tres):")
-	var load_row := HBoxContainer.new()
-	load_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	root.add_child(load_row)
-
-	_load_path_field = LineEdit.new()
-	_load_path_field.placeholder_text = "res://path/to/your_tileset.tres"
-	_load_path_field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_set_a11y(_load_path_field, "TileSet resource path",
-		"Absolute project path to a TileSet .tres file.")
-	_load_path_field.text_submitted.connect(_on_load_path_submitted)
-	load_row.add_child(_load_path_field)
-
-	_load_button = Button.new()
-	_load_button.text = "Load"
-	_set_a11y(_load_button, "Load TileSet",
-		"Load the TileSet resource from the path above.")
-	_load_button.pressed.connect(_on_load_pressed)
-	load_row.add_child(_load_button)
-
-	_pull_selection_button = Button.new()
-	_pull_selection_button.text = "Use TileSet from selected TileMapLayer"
-	_set_a11y(_pull_selection_button, "Use selected TileMapLayer's TileSet",
-		"Take the TileSet from whichever TileMapLayer is currently selected in the scene.")
-	_pull_selection_button.pressed.connect(_on_pull_selection_pressed)
-	root.add_child(_pull_selection_button)
 
 	var assign_btn := Button.new()
 	assign_btn.text = "Assign this TileSet to selected TileMapLayer"
@@ -169,6 +145,32 @@ func _build_ui() -> void:
 		"Remove the selected physics layer from this TileSet. All tile collision data on it is lost.")
 	remove_phys_btn.pressed.connect(_on_remove_physics_layer_pressed)
 	phys_buttons.add_child(remove_phys_btn)
+
+	# --- Navigation layers ---
+	_make_label(root, "Navigation layers:")
+	_navigation_layer_list = ItemList.new()
+	_navigation_layer_list.custom_minimum_size = Vector2(0, 60)
+	_navigation_layer_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_set_a11y(_navigation_layer_list, "Navigation layer list",
+		"Navigation layers defined on this TileSet. Each tile can have a navigation polygon per layer.")
+	root.add_child(_navigation_layer_list)
+
+	var nav_buttons := HBoxContainer.new()
+	root.add_child(nav_buttons)
+
+	var add_nav_btn := Button.new()
+	add_nav_btn.text = "Add navigation layer"
+	_set_a11y(add_nav_btn, "Add navigation layer",
+		"Add a new navigation layer to this TileSet. Tiles can then have a navigation polygon on it.")
+	add_nav_btn.pressed.connect(_on_add_navigation_layer_pressed)
+	nav_buttons.add_child(add_nav_btn)
+
+	var remove_nav_btn := Button.new()
+	remove_nav_btn.text = "Remove navigation layer"
+	_set_a11y(remove_nav_btn, "Remove selected navigation layer",
+		"Remove the selected navigation layer from this TileSet. All tile navigation data on it is lost.")
+	remove_nav_btn.pressed.connect(_on_remove_navigation_layer_pressed)
+	nav_buttons.add_child(remove_nav_btn)
 
 	# --- Source chooser ---
 	_make_label(root, "Source:")
@@ -255,120 +257,82 @@ func _build_ui() -> void:
 	_collision_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	root.add_child(_collision_container)
 
+	# --- Navigation editor ---
+	_make_label(root, "Navigation (per navigation layer):")
+	_navigation_container = VBoxContainer.new()
+	_navigation_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.add_child(_navigation_container)
+
 
 # ----- TileSet lifecycle -----
 
 func _on_new_tileset_pressed() -> void:
-	var dlg := AcceptDialog.new()
-	dlg.title = "New TileSet"
-	dlg.min_size = Vector2(420, 140)
-
-	var vb := VBoxContainer.new()
-	dlg.add_child(vb)
-
-	var lbl := Label.new()
-	lbl.text = "Save path for the new TileSet (.tres):"
-	vb.add_child(lbl)
-
-	var field := LineEdit.new()
-	field.placeholder_text = "res://tilesets/my_tileset.tres"
-	field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_set_a11y(field, "New TileSet save path",
-		"Project path where the new TileSet .tres will be written. Must end in .tres.")
-	vb.add_child(field)
-
-	dlg.get_ok_button().text = "Create"
-	add_child(dlg)
-	dlg.popup_centered()
-	field.grab_focus()
-
-	dlg.confirmed.connect(func():
-		var path := field.text.strip_edges()
-		if path.is_empty() or not path.ends_with(".tres"):
-			announcer.speak("Path must end in .tres.", AccessibleAnnouncer.Priority.ASSERTIVE)
-			dlg.queue_free()
-			return
-		var ts := TileSet.new()
-		var err := ResourceSaver.save(ts, path)
-		if err != OK:
-			announcer.speak("Failed to save TileSet (error %d)." % err,
-				AccessibleAnnouncer.Priority.ASSERTIVE)
-			dlg.queue_free()
-			return
-		_tileset = ts
-		_tileset_path = path
-		announcer.speak("Created and loaded new TileSet at %s." % path.get_file(),
-			AccessibleAnnouncer.Priority.ASSERTIVE)
-		_refresh_all()
-		dlg.queue_free()
-	)
-	dlg.canceled.connect(func(): dlg.queue_free())
-
-
-func _on_save_tileset_pressed() -> void:
-	if _tileset == null:
-		announcer.speak("No TileSet loaded.", AccessibleAnnouncer.Priority.ASSERTIVE)
-		return
-	if _tileset_path.is_empty():
-		announcer.speak("TileSet has no path. Load it from a file first.",
-			AccessibleAnnouncer.Priority.ASSERTIVE)
-		return
-	if "::" in _tileset_path:
-		announcer.speak(
-			"Cannot save: this TileSet is embedded inside a scene file. "
-			"Use 'New TileSet' to save it as a standalone .tres file first.",
-			AccessibleAnnouncer.Priority.ASSERTIVE)
-		return
-	var err := ResourceSaver.save(_tileset, _tileset_path, ResourceSaver.FLAG_BUNDLE_RESOURCES)
-	if err != OK:
-		announcer.speak("Save failed (error %d). Check the Godot Output panel for details." % err,
-			AccessibleAnnouncer.Priority.ASSERTIVE)
-		return
-	announcer.speak("Saved TileSet to %s." % _tileset_path.get_file(),
-		AccessibleAnnouncer.Priority.ASSERTIVE)
-
-
-# ----- TileSet loading -----
-
-func _on_load_pressed() -> void:
-	_load_from_path(_load_path_field.text.strip_edges())
-
-
-func _on_load_path_submitted(text: String) -> void:
-	_load_from_path(text.strip_edges())
-
-
-func _load_from_path(path: String) -> void:
-	if path.is_empty():
-		announcer.speak("No path entered.", AccessibleAnnouncer.Priority.ASSERTIVE)
-		return
-	if not ResourceLoader.exists(path):
-		announcer.speak("Path not found: %s" % path, AccessibleAnnouncer.Priority.ASSERTIVE)
-		return
-	var res := load(path)
-	if not (res is TileSet):
-		announcer.speak("Resource at %s is not a TileSet." % path, AccessibleAnnouncer.Priority.ASSERTIVE)
-		return
-	_tileset = res
-	_tileset_path = path
-	announcer.speak("Loaded TileSet %s." % path.get_file(), AccessibleAnnouncer.Priority.ASSERTIVE)
-	_refresh_all()
-
-
-func _on_pull_selection_pressed() -> void:
 	if editor_interface == null:
 		announcer.speak("No editor interface available.", AccessibleAnnouncer.Priority.ASSERTIVE)
 		return
 	var selection := editor_interface.get_selection()
 	var nodes := selection.get_selected_nodes()
 	for n in nodes:
-		if n is TileMapLayer and n.tile_set != null:
-			_tileset = n.tile_set
-			_tileset_path = n.tile_set.resource_path
-			announcer.speak("Loaded TileSet from %s." % n.name, AccessibleAnnouncer.Priority.ASSERTIVE)
-			_refresh_all()
+		if n is TileMapLayer:
+			var layer := n as TileMapLayer
+			var ts := TileSet.new()
+			var old_ts := layer.tile_set
+			if editor_undo_redo != null:
+				editor_undo_redo.create_action("Create TileSet on %s" % layer.name)
+				editor_undo_redo.add_do_property(layer, "tile_set", ts)
+				editor_undo_redo.add_undo_property(layer, "tile_set", old_ts)
+				editor_undo_redo.commit_action()
+			else:
+				layer.tile_set = ts
+			_set_tileset_from_layer(layer)
+			announcer.speak("Created new TileSet on %s." % layer.name,
+				AccessibleAnnouncer.Priority.ASSERTIVE)
 			return
-	announcer.speak("No TileMapLayer with a TileSet is currently selected.",
+	announcer.speak("Select a TileMapLayer first to attach the new TileSet to.",
+		AccessibleAnnouncer.Priority.ASSERTIVE)
+
+
+# ----- TileSet entry points -----
+
+func _set_tileset_resource(ts: TileSet) -> void:
+	if ts == null:
+		return
+	if _in_resource_mode and _tileset == ts:
+		return
+	_tileset = ts
+	_tileset_path = ts.resource_path
+	_in_resource_mode = true
+	_save_btn.visible = true
+	announcer.speak("TileSet resource loaded: %s." % ts.resource_path.get_file(),
+		AccessibleAnnouncer.Priority.ASSERTIVE)
+	_refresh_all()
+
+
+func _set_tileset_from_layer(layer: TileMapLayer) -> void:
+	if layer == null or layer.tile_set == null:
+		return
+	if not _in_resource_mode and _tileset == layer.tile_set:
+		return
+	_tileset = layer.tile_set
+	_tileset_path = layer.tile_set.resource_path
+	_in_resource_mode = false
+	_save_btn.visible = false
+	_refresh_all()
+
+
+func _on_save_resource_pressed() -> void:
+	if _tileset == null or not _in_resource_mode:
+		return
+	if _tileset.resource_path.is_empty() or "::" in _tileset.resource_path:
+		announcer.speak("Cannot save: TileSet has no standalone .tres path.",
+			AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	var err := ResourceSaver.save(_tileset)
+	if err != OK:
+		announcer.speak("Save failed (error %d)." % err,
+			AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	announcer.speak("Saved: %s." % _tileset.resource_path.get_file(),
 		AccessibleAnnouncer.Priority.ASSERTIVE)
 
 
@@ -601,12 +565,13 @@ func _refresh_all() -> void:
 	_refresh_status()
 	_refresh_layer_list()
 	_refresh_physics_layer_list()
+	_refresh_navigation_layer_list()
 	_refresh_sources()
 
 
 func _refresh_status() -> void:
 	if _tileset == null:
-		_status_label.text = "No TileSet loaded. Use 'New TileSet' to create one, or enter a path above and press Load."
+		_status_label.text = "No TileSet loaded. Select a TileMapLayer or a TileSet .tres in the Inspector, or press 'New TileSet...' with a layer selected."
 	else:
 		var name := _tileset_path if not _tileset_path.is_empty() else "(embedded)"
 		_status_label.text = "TileSet: %s  |  %d source(s)  |  %d custom data layer(s)" % [
@@ -635,6 +600,7 @@ func _refresh_sources() -> void:
 		_tile_info_label.text = ""
 		_clear_custom_data_fields()
 		_clear_collision_fields()
+		_clear_navigation_fields()
 
 
 func _source_label(sid: int, src: TileSetSource) -> String:
@@ -651,6 +617,7 @@ func _on_source_selected(idx: int) -> void:
 	_tile_info_label.text = ""
 	_clear_custom_data_fields()
 	_clear_collision_fields()
+	_clear_navigation_fields()
 	if _tileset == null or idx < 0 or idx >= _source_ids.size():
 		return
 	var sid := _source_ids[idx]
@@ -716,6 +683,7 @@ func _find_custom_data_layer_index(layer_name: String) -> int:
 func _on_tile_selected(idx: int) -> void:
 	_clear_custom_data_fields()
 	_clear_collision_fields()
+	_clear_navigation_fields()
 	var src_idx := _source_option.selected
 	if _tileset == null or src_idx < 0 or src_idx >= _source_ids.size():
 		return
@@ -760,6 +728,11 @@ func _show_atlas_tile_detail(atlas: TileSetAtlasSource, coords: Vector2i) -> voi
 	var nphys := _tileset.get_physics_layers_count()
 	for i in nphys:
 		_add_collision_editor(atlas, coords, i)
+
+	_clear_navigation_fields()
+	var nnav := _tileset.get_navigation_layers_count()
+	for i in nnav:
+		_add_navigation_editor(atlas, coords, i)
 
 
 func _physics_polygon_summary(data: TileData, nphys: int) -> String:
@@ -809,6 +782,46 @@ func _on_remove_physics_layer_pressed() -> void:
 	announcer.speak("Removed physics layer %d." % idx, AccessibleAnnouncer.Priority.ASSERTIVE)
 
 
+# ----- Navigation layer management -----
+
+func _refresh_navigation_layer_list() -> void:
+	_navigation_layer_list.clear()
+	if _tileset == null:
+		return
+	for i in _tileset.get_navigation_layers_count():
+		_navigation_layer_list.add_item("Layer %d" % i)
+
+
+func _on_add_navigation_layer_pressed() -> void:
+	if _tileset == null:
+		announcer.speak("No TileSet loaded.", AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	_tileset.add_navigation_layer()
+	var idx := _tileset.get_navigation_layers_count() - 1
+	_refresh_navigation_layer_list()
+	announcer.speak("Added navigation layer %d." % idx, AccessibleAnnouncer.Priority.ASSERTIVE)
+
+
+func _on_remove_navigation_layer_pressed() -> void:
+	if _tileset == null:
+		announcer.speak("No TileSet loaded.", AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	var selected := _navigation_layer_list.get_selected_items()
+	if selected.is_empty():
+		announcer.speak("No navigation layer selected.", AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	var idx: int = selected[0]
+	_tileset.remove_navigation_layer(idx)
+	_refresh_navigation_layer_list()
+	_clear_navigation_fields()
+	var src_idx := _source_option.selected
+	if src_idx >= 0 and src_idx < _source_ids.size():
+		var tile_selected := _tile_list.get_selected_items()
+		if not tile_selected.is_empty():
+			_on_tile_selected(tile_selected[0])
+	announcer.speak("Removed navigation layer %d." % idx, AccessibleAnnouncer.Priority.ASSERTIVE)
+
+
 # ----- Collision editing -----
 
 func _clear_collision_fields() -> void:
@@ -820,7 +833,7 @@ func _add_collision_editor(atlas: TileSetAtlasSource, coords: Vector2i, layer_id
 	var data := atlas.get_tile_data(coords, 0)
 	if data == null:
 		return
-	var has_collision := data.get_collision_polygons_count(layer_idx) > 0
+	var count := data.get_collision_polygons_count(layer_idx)
 
 	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -831,39 +844,191 @@ func _add_collision_editor(atlas: TileSetAtlasSource, coords: Vector2i, layer_id
 	lbl.custom_minimum_size = Vector2(70, 0)
 	row.add_child(lbl)
 
-	var cb := CheckBox.new()
-	cb.text = "Solid (full tile)"
-	cb.button_pressed = has_collision
-	_set_a11y(cb, "Collision layer %d" % layer_idx,
-		"Check to add a full-tile collision rectangle on physics layer %d; uncheck to remove it." % layer_idx)
-	cb.toggled.connect(func(checked: bool) -> void:
-		_on_collision_toggled(checked, atlas, coords, layer_idx)
+	var count_lbl := Label.new()
+	count_lbl.text = "%d polygon(s)" % count
+	count_lbl.custom_minimum_size = Vector2(110, 0)
+	row.add_child(count_lbl)
+
+	var edit_btn := Button.new()
+	edit_btn.text = "Edit polygon..."
+	_set_a11y(edit_btn, "Edit collision polygons on physics layer %d" % layer_idx,
+		"Open the polygon editor for physics layer %d. %d polygon(s) currently defined." % [layer_idx, count])
+	edit_btn.pressed.connect(func() -> void:
+		_open_collision_editor(atlas, coords, layer_idx)
 	)
-	row.add_child(cb)
+	row.add_child(edit_btn)
 
 
-func _on_collision_toggled(checked: bool, atlas: TileSetAtlasSource, coords: Vector2i, layer_idx: int) -> void:
+func _open_collision_editor(atlas: TileSetAtlasSource, coords: Vector2i, layer_idx: int) -> void:
 	var data := atlas.get_tile_data(coords, 0)
 	if data == null:
 		return
+	var current: Array = []
 	var count := data.get_collision_polygons_count(layer_idx)
-	for i in range(count - 1, -1, -1):
-		data.remove_collision_polygon(layer_idx, i)
-	if checked:
-		data.add_collision_polygon(layer_idx)
-		data.set_collision_polygon_points(layer_idx, 0, _make_full_tile_rect(atlas))
-		announcer.speak("Layer %d collision enabled." % layer_idx, AccessibleAnnouncer.Priority.ASSERTIVE)
+	for i in count:
+		current.append(data.get_collision_polygon_points(layer_idx, i))
+
+	var dlg := PolygonEditorDialog.new()
+	dlg.editor_mode = PolygonEditorDialog.Mode.COLLISION
+	dlg.tile_size = atlas.texture_region_size
+	dlg.polygons = current
+	dlg.announcer = announcer
+	dlg.title = "Edit collision polygons: physics layer %d" % layer_idx
+	add_child(dlg)
+	dlg.polygons_committed.connect(func(new_polygons: Array) -> void:
+		_commit_collision_polygons(atlas, coords, layer_idx, new_polygons)
+		dlg.queue_free()
+	)
+	dlg.canceled.connect(func() -> void: dlg.queue_free())
+	dlg.popup_centered()
+
+
+func _commit_collision_polygons(
+	atlas: TileSetAtlasSource, coords: Vector2i, layer_idx: int, new_polygons: Array
+) -> void:
+	var data := atlas.get_tile_data(coords, 0)
+	if data == null:
+		return
+	var old_polygons: Array = []
+	var old_count := data.get_collision_polygons_count(layer_idx)
+	for i in old_count:
+		old_polygons.append(data.get_collision_polygon_points(layer_idx, i))
+
+	if editor_undo_redo != null:
+		editor_undo_redo.create_action("Edit collision polygons on layer %d" % layer_idx)
+		editor_undo_redo.add_do_method(self, "_apply_collision_polygons", data, layer_idx, new_polygons)
+		editor_undo_redo.add_undo_method(self, "_apply_collision_polygons", data, layer_idx, old_polygons)
+		editor_undo_redo.commit_action()
 	else:
-		announcer.speak("Layer %d collision disabled." % layer_idx, AccessibleAnnouncer.Priority.ASSERTIVE)
+		_apply_collision_polygons(data, layer_idx, new_polygons)
+
+	announcer.speak("Saved %d collision polygon(s) on layer %d." % [new_polygons.size(), layer_idx],
+		AccessibleAnnouncer.Priority.ASSERTIVE)
+
+	var tile_arr := _tile_list.get_selected_items()
+	if not tile_arr.is_empty():
+		_on_tile_selected(tile_arr[0])
 
 
-func _make_full_tile_rect(atlas: TileSetAtlasSource) -> PackedVector2Array:
-	var hw := atlas.texture_region_size.x / 2.0
-	var hh := atlas.texture_region_size.y / 2.0
-	return PackedVector2Array([
-		Vector2(-hw, -hh), Vector2(hw, -hh),
-		Vector2(hw, hh), Vector2(-hw, hh),
-	])
+func _apply_collision_polygons(data: TileData, layer_idx: int, polygons: Array) -> void:
+	if data == null:
+		return
+	var existing := data.get_collision_polygons_count(layer_idx)
+	for i in range(existing - 1, -1, -1):
+		data.remove_collision_polygon(layer_idx, i)
+	for i in polygons.size():
+		data.add_collision_polygon(layer_idx)
+		data.set_collision_polygon_points(layer_idx, i, polygons[i])
+
+
+# ----- Navigation editing -----
+
+func _clear_navigation_fields() -> void:
+	if _navigation_container == null:
+		return
+	for c in _navigation_container.get_children():
+		c.queue_free()
+
+
+func _add_navigation_editor(atlas: TileSetAtlasSource, coords: Vector2i, layer_idx: int) -> void:
+	var data := atlas.get_tile_data(coords, 0)
+	if data == null:
+		return
+	var np: NavigationPolygon = data.get_navigation_polygon(layer_idx)
+	var point_count := 0
+	if np != null and np.get_outline_count() > 0:
+		point_count = np.get_outline(0).size()
+
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_navigation_container.add_child(row)
+
+	var lbl := Label.new()
+	lbl.text = "Nav layer %d:" % layer_idx
+	lbl.custom_minimum_size = Vector2(90, 0)
+	row.add_child(lbl)
+
+	var count_lbl := Label.new()
+	if np == null:
+		count_lbl.text = "(none)"
+	else:
+		count_lbl.text = "%d point(s)" % point_count
+	count_lbl.custom_minimum_size = Vector2(110, 0)
+	row.add_child(count_lbl)
+
+	var edit_btn := Button.new()
+	edit_btn.text = "Edit polygon..."
+	_set_a11y(edit_btn, "Edit navigation polygon on layer %d" % layer_idx,
+		"Open the polygon editor for navigation layer %d. %d point(s) currently defined." % [layer_idx, point_count])
+	edit_btn.pressed.connect(func() -> void:
+		_open_navigation_editor(atlas, coords, layer_idx)
+	)
+	row.add_child(edit_btn)
+
+
+func _open_navigation_editor(atlas: TileSetAtlasSource, coords: Vector2i, layer_idx: int) -> void:
+	var data := atlas.get_tile_data(coords, 0)
+	if data == null:
+		return
+	var np: NavigationPolygon = data.get_navigation_polygon(layer_idx)
+	var current: Array = []
+	if np != null and np.get_outline_count() > 0:
+		current.append(np.get_outline(0))
+	else:
+		current.append(PackedVector2Array())
+
+	var dlg := PolygonEditorDialog.new()
+	dlg.editor_mode = PolygonEditorDialog.Mode.NAVIGATION
+	dlg.tile_size = atlas.texture_region_size
+	dlg.polygons = current
+	dlg.announcer = announcer
+	dlg.title = "Edit navigation polygon: layer %d" % layer_idx
+	add_child(dlg)
+	dlg.polygons_committed.connect(func(new_polygons: Array) -> void:
+		_commit_navigation_polygon(atlas, coords, layer_idx, new_polygons)
+		dlg.queue_free()
+	)
+	dlg.canceled.connect(func() -> void: dlg.queue_free())
+	dlg.popup_centered()
+
+
+func _commit_navigation_polygon(
+	atlas: TileSetAtlasSource, coords: Vector2i, layer_idx: int, new_polygons: Array
+) -> void:
+	var data := atlas.get_tile_data(coords, 0)
+	if data == null:
+		return
+
+	var new_np: NavigationPolygon = null
+	if new_polygons.size() > 0 and (new_polygons[0] as PackedVector2Array).size() >= 3:
+		new_np = NavigationPolygon.new()
+		var outline: PackedVector2Array = new_polygons[0]
+		new_np.add_outline(outline)
+		new_np.vertices = outline
+		var indices := PackedInt32Array()
+		for i in outline.size():
+			indices.append(i)
+		new_np.add_polygon(indices)
+
+	var old_np: NavigationPolygon = data.get_navigation_polygon(layer_idx)
+
+	if editor_undo_redo != null:
+		editor_undo_redo.create_action("Edit navigation polygon on layer %d" % layer_idx)
+		editor_undo_redo.add_do_method(data, "set_navigation_polygon", layer_idx, new_np)
+		editor_undo_redo.add_undo_method(data, "set_navigation_polygon", layer_idx, old_np)
+		editor_undo_redo.commit_action()
+	else:
+		data.set_navigation_polygon(layer_idx, new_np)
+
+	var pt_count := 0
+	if new_np != null and new_np.get_outline_count() > 0:
+		pt_count = new_np.get_outline(0).size()
+	announcer.speak("Saved navigation polygon on layer %d with %d point(s)." % [layer_idx, pt_count],
+		AccessibleAnnouncer.Priority.ASSERTIVE)
+
+	var tile_arr := _tile_list.get_selected_items()
+	if not tile_arr.is_empty():
+		_on_tile_selected(tile_arr[0])
 
 
 func _short_announce_for_atlas(atlas: TileSetAtlasSource, coords: Vector2i, data: TileData) -> String:
@@ -887,6 +1052,7 @@ func _show_scene_tile_detail(sc: TileSetScenesCollectionSource, scene_id: int) -
 	var path := packed.resource_path if packed != null else "(unset)"
 	_tile_info_label.text = "Scene tile id %d\nScene: %s" % [scene_id, path]
 	_clear_collision_fields()
+	_clear_navigation_fields()
 	announcer.speak("Scene tile %d, %s" % [scene_id, path.get_file()])
 
 

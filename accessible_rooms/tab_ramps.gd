@@ -115,7 +115,8 @@ func _add_ramp(side: String) -> void:
 	r.owner = dock.scene_query.edited_root()
 	r.position = ramp_pos
 
-	var cv: float = -room.size.y / 2.0 + _door_h / 2.0
+	var floor_t: float = room.wall_floor.thickness if room.wall_floor else 0.0
+	var cv: float = -room.size.y / 2.0 + _door_h / 2.0 + floor_t
 	room.add_doorway(side, 0.0, cv, _door_w, _door_h)
 
 	r.rebuild()

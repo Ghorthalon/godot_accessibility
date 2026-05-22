@@ -7,7 +7,7 @@ const SIDES := ["north", "south", "east", "west", "floor", "ceiling"]
 const NORMALS := {
 	"north": Vector3(0,0,-1), "south": Vector3(0,0,1),
 	"east":  Vector3(1,0,0),  "west":  Vector3(-1,0,0),
-	"floor": Vector3(0,1,0),  "ceiling": Vector3(0,-1,0),
+	"floor": Vector3(0,-1,0), "ceiling": Vector3(0,1,0),
 }
 
 @export var size: Vector3 = Vector3(6, 3, 6): set = _set_size
@@ -304,8 +304,9 @@ func _face_center_local(side: String) -> Vector3:
 	return Vector3.ZERO
 
 func punch_doorway(side: String, width := 1.2, height := 2.1) -> void:
-	## Appends a centred floorlevel doorway without removing existing ones.
-	add_doorway(side, 0.0, -size.y / 2.0 + height / 2.0, width, height)
+	## Appends a centred doorway sitting on top of the floor slab.
+	var floor_thickness: float = wall_floor.thickness if wall_floor else 0.0
+	add_doorway(side, 0.0, -size.y / 2.0 + height / 2.0 + floor_thickness, width, height)
 
 func punch_hole(side: String, center_u: float, center_v: float, width := 0.9, height := 0.9) -> void:
 	## Appends a hole centred at (center_u, center_v) in wall local metres. Suitable for windows.

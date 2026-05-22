@@ -279,7 +279,8 @@ func _add_neighbor(side: String) -> void:
 	# add_doorway's internal _queue_rebuild is a no op (is_inside_tree = false).
 	# This ensures r.rebuild() below is the only rebuild that runs.
 	var back_side: String = entity.neighbor_doorway_side(side)
-	var cv_new: float = -r.size.y / 2.0 + door_h.value / 2.0
+	var new_floor_t: float = r.wall_floor.thickness if r.wall_floor else 0.0
+	var cv_new: float = -r.size.y / 2.0 + door_h.value / 2.0 + new_floor_t
 	if back_side != "":
 		r.add_doorway(back_side, 0.0, cv_new, door_w.value, door_h.value)
 	_apply_surface_settings(r)
@@ -294,10 +295,12 @@ func _add_neighbor(side: String) -> void:
 
 
 	if entity.has_wall(side):
-		var cv_cur: float = -(entity as Room3D).size.y / 2.0 + door_h.value / 2.0
-		var u_off: float = _overlap_center_u(entity as Room3D, r, side)
-		(entity as Room3D).add_doorway(side, u_off, cv_cur, door_w.value, door_h.value)
-		_make_door_placeholder(entity as Room3D, side, u_off, cv_cur, door_w.value, door_h.value)
+		var cur_room := entity as Room3D
+		var cur_floor_t: float = cur_room.wall_floor.thickness if cur_room.wall_floor else 0.0
+		var cv_cur: float = -cur_room.size.y / 2.0 + door_h.value / 2.0 + cur_floor_t
+		var u_off: float = _overlap_center_u(cur_room, r, side)
+		cur_room.add_doorway(side, u_off, cv_cur, door_w.value, door_h.value)
+		_make_door_placeholder(cur_room, side, u_off, cv_cur, door_w.value, door_h.value)
 
 	_refresh()
 	dock._say_ok("Added room %s to %s of %s, connected by doorway." % [r.name, side, entity.name])
@@ -307,7 +310,8 @@ func _punch(side: String) -> void:
 	if not dock.current_entity is Room3D: dock._say("No room selected."); return
 	var room := dock.current_entity as Room3D
 	room.punch_doorway(side, door_w.value, door_h.value)
-	var cv := -room.size.y / 2.0 + door_h.value / 2.0
+	var floor_t: float = room.wall_floor.thickness if room.wall_floor else 0.0
+	var cv := -room.size.y / 2.0 + door_h.value / 2.0 + floor_t
 	_make_door_placeholder(room, side, 0.0, cv, door_w.value, door_h.value)
 	dock._say("Doorway punched on %s wall (%.1fm × %.1fm)." % [side, door_w.value, door_h.value])
 	_refresh_door_list()

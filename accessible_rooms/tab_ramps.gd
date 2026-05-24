@@ -9,7 +9,7 @@ var ramp_hc: SpinBox
 var ramp_cl: SpinBox
 var door_w_ref: SpinBox  # mirrors dock's door_w, set via tab_rooms if needed
 var _door_w: float = 1.2
-var _door_h: float = 2.5
+var _door_h: float = 2.8
 var _standalone_dir: String = "north"
 var build_walls: CheckBox
 var build_ceiling: CheckBox
@@ -44,7 +44,7 @@ func _ready() -> void:
 	var dl := Label.new(); dl.text = "Connecting doorway (m):"
 	add_child(dl)
 	var door_w_spin := _spinbox(0.5, 20.0, 0.1, 1.2)
-	var door_h_spin := _spinbox(0.5, 20.0, 0.1, 2.5)
+	var door_h_spin := _spinbox(0.5, 20.0, 0.1, 2.8)
 	door_w_spin.value_changed.connect(func(v): _door_w = v)
 	door_h_spin.value_changed.connect(func(v): _door_h = v)
 	var dr := HBoxContainer.new()
@@ -86,6 +86,16 @@ func _add_ramp(side: String) -> void:
 	var root: Node = dock.scene_query.placement_parent()
 	if root == null: dock._say("No scene open."); return
 	var room := dock.current_entity as Room3D
+	var floor_t: float = room.wall_floor.thickness if room.wall_floor else 0.0
+
+	var clearance_safety := 0.05
+	if _door_h + floor_t > ramp_cl.value - clearance_safety:
+		dock._say_err(("Cannot place ramp: door height %.2fm + floor thickness %.2fm exceeds " +
+			"clearance %.2fm. Lower door height (≤%.2fm) or raise clearance (≥%.2fm).") % \
+			[_door_h, floor_t, ramp_cl.value,
+			 ramp_cl.value - floor_t - clearance_safety,
+			 _door_h + floor_t + clearance_safety])
+		return
 
 	var r := Ramp3D.new()
 	r.name = "%s_ramp_%s" % [room.name, side]
@@ -93,6 +103,7 @@ func _add_ramp(side: String) -> void:
 	r.length        = ramp_len.value
 	r.height_change = ramp_hc.value
 	r.clearance     = ramp_cl.value
+	r.floor_thickness = floor_t
 	# HIGH end faces the same direction as the attachment side, ramp rises away from the source room.
 	r.high_end = side
 
@@ -115,9 +126,15 @@ func _add_ramp(side: String) -> void:
 	r.owner = dock.scene_query.edited_root()
 	r.position = ramp_pos
 
-	var floor_t: float = room.wall_floor.thickness if room.wall_floor else 0.0
 	var cv: float = -room.size.y / 2.0 + _door_h / 2.0 + floor_t
-	room.add_doorway(side, 0.0, cv, _door_w, _door_h)
+	var d_low := DoorEntry.new()
+	d_low.side = "low"; d_low.center_u = 0.0; d_low.center_v = cv
+	d_low.width = _door_w; d_low.height = _door_h
+	r.door_list.append(d_low)
+	var d_high := DoorEntry.new()
+	d_high.side = "high"; d_high.center_u = 0.0; d_high.center_v = cv
+	d_high.width = _door_w; d_high.height = _door_h
+	r.door_list.append(d_high)
 
 	r.rebuild()
 

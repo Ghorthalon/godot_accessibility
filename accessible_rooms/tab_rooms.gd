@@ -280,19 +280,33 @@ func _add_neighbor(side: String) -> void:
 	# This ensures r.rebuild() below is the only rebuild that runs.
 	var back_side: String = entity.neighbor_doorway_side(side)
 	var new_floor_t: float = r.wall_floor.thickness if r.wall_floor else 0.0
-	var cv_new: float = -r.size.y / 2.0 + door_h.value / 2.0 + new_floor_t
-	if back_side != "":
+	var entity_owns_doors: bool = entity is Stairs3D or entity is Ramp3D
+	var cv_new: float = 0.0
+	if back_side != "" and not entity_owns_doors:
+		# Room-to-room: tab spinboxes drive the doorway dimensions.
+		cv_new = -r.size.y / 2.0 + door_h.value / 2.0 + new_floor_t
 		r.add_doorway(back_side, 0.0, cv_new, door_w.value, door_h.value)
+	elif back_side != "" and entity_owns_doors:
+		# Stair/ramp: use the entity's stored high-end DoorEntry, but recompute
+		# cv against the new room's dimensions so it sits flush on the floor.
+		for d in entity.door_list:
+			if d.side == "high":
+				d.center_v = -r.size.y / 2.0 + d.height / 2.0 + new_floor_t
+		# The stair's apply_doors_to_rooms() (called below) will mirror the
+		# doorway onto r. We deliberately do NOT add it here.
 	_apply_surface_settings(r)
 
 	root.add_child(r); r.owner = dock.scene_query.edited_root()
 	r.position = new_pos
 	r.rebuild()   # single rebuild, config fully set, not in tree when add_doorway was called
 
-	# Placeholder for new room's backside doorway
-	if back_side != "":
+	# Placeholder for new room's backside doorway (room-to-room flow only).
+	if back_side != "" and not entity_owns_doors:
 		_make_door_placeholder(r, back_side, 0.0, cv_new, door_w.value, door_h.value)
 
+	if entity_owns_doors:
+		# Mirror the stair/ramp's high-end DoorEntry onto the new room.
+		entity.apply_doors_to_rooms()
 
 	if entity.has_wall(side):
 		var cur_room := entity as Room3D
@@ -554,27 +568,37 @@ func _resize_fill_ns() -> void:
 	room.rebuild()
 	dock._say("Room depth set to %.1fm to fill north-south space." % room.size.z)
 
+func _door_list_owner() -> Object:
+	var e = dock.current_entity
+	if e is Room3D or e is Stairs3D or e is Ramp3D: return e
+	return null
+
+func _door_list_sides() -> Array:
+	var e = dock.current_entity
+	if e is Stairs3D or e is Ramp3D: return ["low", "high"]
+	return ["north", "south", "east", "west"]
+
 func _refresh_door_list() -> void:
 	_door_item_list.clear()
 	_current_door_idx = -1
 	for c in _door_props_container.get_children(): c.queue_free()
-	if not dock.current_entity is Room3D: return
-	var room := dock.current_entity as Room3D
-	if room.door_list.is_empty():
-		return
-	for i in room.door_list.size():
-		var d: DoorEntry = room.door_list[i]
+	var owner_obj = _door_list_owner()
+	if owner_obj == null: return
+	var doors: Array = owner_obj.door_list
+	if doors.is_empty(): return
+	for i in doors.size():
+		var d: DoorEntry = doors[i]
 		var name_part := ("\"%s\" " % d.label) if d.label != "" else ""
 		var scene_part := " [filled]" if d.scene_path != "" else " [empty]"
 		_door_item_list.add_item("[%d] %s%s  U:%.2f V:%.2f  %.1f×%.1fm%s" % [i, name_part, d.side, d.center_u, d.center_v, d.width, d.height, scene_part])
 		_door_item_list.set_item_metadata(i, i)
 
 func _on_door_select(i: int) -> void:
-	if not dock.current_entity is Room3D: return
-	var room := dock.current_entity as Room3D
+	var owner_obj = _door_list_owner()
+	if owner_obj == null: return
 	_current_door_idx = _door_item_list.get_item_metadata(i)
-	if _current_door_idx < 0 or _current_door_idx >= room.door_list.size(): return
-	var d: DoorEntry = room.door_list[_current_door_idx]
+	if _current_door_idx < 0 or _current_door_idx >= owner_obj.door_list.size(): return
+	var d: DoorEntry = owner_obj.door_list[_current_door_idx]
 	for c in _door_props_container.get_children(): c.queue_free()
 	await get_tree().process_frame
 	var name_row := HBoxContainer.new()
@@ -587,7 +611,7 @@ func _on_door_select(i: int) -> void:
 	var side_row := HBoxContainer.new()
 	var side_lbl := Label.new(); side_lbl.text = "Side:"
 	var side_opt := OptionButton.new()
-	for s in ["north", "south", "east", "west"]:
+	for s in _door_list_sides():
 		side_opt.add_item(s)
 		if s == d.side: side_opt.selected = side_opt.item_count - 1
 	side_row.add_child(side_lbl); side_row.add_child(side_opt)
@@ -610,12 +634,12 @@ func _on_door_select(i: int) -> void:
 	_door_props_container.add_child(place_btn)
 
 func _apply_door_changes() -> void:
-	if not dock.current_entity is Room3D or _current_door_idx < 0:
+	var owner_obj = _door_list_owner()
+	if owner_obj == null or _current_door_idx < 0:
 		dock._say("No door selected."); return
-	var room := dock.current_entity as Room3D
-	if _current_door_idx >= room.door_list.size():
+	if _current_door_idx >= owner_obj.door_list.size():
 		dock._say("Door index out of range."); return
-	var d: DoorEntry = room.door_list[_current_door_idx]
+	var d: DoorEntry = owner_obj.door_list[_current_door_idx]
 	var children := _door_props_container.get_children()
 	var name_edit2 := children[0].get_child(1) as LineEdit
 	d.label = name_edit2.text
@@ -632,36 +656,62 @@ func _apply_door_changes() -> void:
 		d.center_u = spins[0].value; d.center_v = spins[1].value
 		d.width = spins[2].value; d.height = spins[3].value
 	if scene_edit != null: d.scene_path = scene_edit.text.strip_edges()
-	room._queue_rebuild()
+	if owner_obj is Room3D:
+		(owner_obj as Room3D)._queue_rebuild()
+	else:
+		owner_obj.apply_doors_to_rooms()
 	_refresh_door_list()
-	dock._say("Door %d on %s updated." % [_current_door_idx, room.name])
+	dock._say("Door %d on %s updated." % [_current_door_idx, owner_obj.name])
 
 func _place_door_scene() -> void:
-	if not dock.current_entity is Room3D or _current_door_idx < 0:
+	var owner_obj = _door_list_owner()
+	if owner_obj == null or _current_door_idx < 0:
 		dock._say("No door selected."); return
-	var room := dock.current_entity as Room3D
-	if _current_door_idx >= room.door_list.size():
+	if _current_door_idx >= owner_obj.door_list.size():
 		dock._say("Door index out of range."); return
 	# Persist any pending field edits (including scene path) before placing.
 	_apply_door_changes()
-	var d: DoorEntry = room.door_list[_current_door_idx]
+	var d: DoorEntry = owner_obj.door_list[_current_door_idx]
 	if d.scene_path == "":
 		dock._say("Set a scene path on this door first."); return
 	if not ResourceLoader.exists(d.scene_path):
 		dock._say_err("Scene not found: %s" % d.scene_path); return
 	var packed := load(d.scene_path) as PackedScene
 	if packed == null: dock._say_err("Failed to load scene."); return
-	var tf: Transform3D = dock.scene_query.wall_facing_transform(room, d.side, d.center_u, d.center_v)
+
+	# Resolve the actual Room3D wall this door punches through. For Room3D owners
+	# that's the owner itself; for stair/ramp owners it's the connected room on
+	# the corresponding end.
+	var room: Room3D
+	var room_side: String
+	if owner_obj is Room3D:
+		room = owner_obj as Room3D
+		room_side = d.side
+	else:
+		# Stairs3D or Ramp3D
+		var at_low: bool = (d.side == "low")
+		room = owner_obj._find_connected_room(at_low)
+		if room == null:
+			dock._say_err("No connected room found on the %s end of %s." % [d.side, owner_obj.name]); return
+		room_side = owner_obj.room_side_at_low_end() if at_low else owner_obj.room_side_at_high_end()
+
+	var tf: Transform3D = dock.scene_query.wall_facing_transform(room, room_side, d.center_u, d.center_v)
 	dock.tab_place.instantiate_aligned(packed, tf, room,
-		"door %d (%s wall of %s)" % [_current_door_idx, d.side, room.name])
+		"door %d (%s wall of %s)" % [_current_door_idx, room_side, room.name])
 
 func _remove_selected_door() -> void:
-	if not dock.current_entity is Room3D or _current_door_idx < 0:
+	var owner_obj = _door_list_owner()
+	if owner_obj == null or _current_door_idx < 0:
 		dock._say("No door selected."); return
-	var room := dock.current_entity as Room3D
-	room.remove_door(_current_door_idx)
+	if _current_door_idx >= owner_obj.door_list.size():
+		dock._say("Door index out of range."); return
+	if owner_obj is Room3D:
+		(owner_obj as Room3D).remove_door(_current_door_idx)
+	else:
+		owner_obj.door_list.remove_at(_current_door_idx)
+		owner_obj.apply_doors_to_rooms()
 	_refresh_door_list()
-	dock._say("Removed door %d from %s." % [_current_door_idx, room.name])
+	dock._say("Removed door %d from %s." % [_current_door_idx, owner_obj.name])
 
 func _refresh_connection_list(entity: SpatialEntity3D) -> void:
 	for child in _connection_container.get_children(): child.queue_free()

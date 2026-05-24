@@ -83,9 +83,10 @@ func rebuild() -> void:
 	_sync_doors_to_openings()
 	if not Engine.is_editor_hint(): return
 	for c in get_children():
-		if c.has_meta("generated") or c.has_meta("room_area"): c.queue_free()
+		if c.has_meta("generated") or c.has_meta("room_area"):
+			remove_child(c)
+			c.queue_free()
 	if not is_inside_tree(): return
-	await get_tree().process_frame
 	if _check_rebuild_stale(my_gen): return
 	for side in SIDES:
 		var wall_cfg := cfg(side)

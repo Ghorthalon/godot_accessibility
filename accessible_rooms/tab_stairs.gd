@@ -9,7 +9,7 @@ var stair_len: SpinBox
 var stair_cl: SpinBox
 var stair_steps: SpinBox
 var _door_w: float = 1.2
-var _door_h: float = 2.5
+var _door_h: float = 2.8
 var _standalone_dir: String = "north"
 var build_walls: CheckBox
 var build_ceiling: CheckBox
@@ -51,7 +51,7 @@ func _ready() -> void:
 	var dl := Label.new(); dl.text = "Connecting doorway (m):"
 	add_child(dl)
 	var door_w_spin := _spinbox(0.5, 20.0, 0.1, 1.2)
-	var door_h_spin := _spinbox(0.5, 20.0, 0.1, 2.5)
+	var door_h_spin := _spinbox(0.5, 20.0, 0.1, 2.8)
 	door_w_spin.value_changed.connect(func(v): _door_w = v)
 	door_h_spin.value_changed.connect(func(v): _door_h = v)
 	var dr := HBoxContainer.new()
@@ -80,8 +80,10 @@ func _ready() -> void:
 	hint.text = ("Workflow: (1) Select a room. (2) Add staircase to a side. " +
 		"(3) Place the connecting room at the far end, elevated by the Rise amount.\n" +
 		"Important: do NOT place the connecting room adjacent first, the staircase needs that gap.\n" +
+		"Len is the TOTAL footprint (low landing + slope + high landing). The slope " +
+		"occupies the middle (length - landing_low - landing_high).\n" +
 		"Clearance must exceed the player capsule height (default 2.0 m), use 2.6 m+ for safety.\n" +
-		"Steps (0=auto) divides the rise/length into equal steps using ~18 cm ideal step height.")
+		"Steps (0=auto) divides the rise/slope_length into equal steps using ~18 cm ideal step height.")
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(hint)
 
@@ -92,6 +94,16 @@ func _add_stairs(side: String) -> void:
 	var root: Node = dock.scene_query.placement_parent()
 	if root == null: dock._say("No scene open."); return
 	var room := dock.current_entity as Room3D
+	var floor_t: float = room.wall_floor.thickness if room.wall_floor else 0.0
+
+	var clearance_safety := 0.05
+	if _door_h + floor_t > stair_cl.value - clearance_safety:
+		dock._say_err(("Cannot place staircase: door height %.2fm + floor thickness %.2fm exceeds " +
+			"clearance %.2fm. Lower door height (≤%.2fm) or raise clearance (≥%.2fm).") % \
+			[_door_h, floor_t, stair_cl.value,
+			 stair_cl.value - floor_t - clearance_safety,
+			 _door_h + floor_t + clearance_safety])
+		return
 
 	var s := Stairs3D.new()
 	s.name = "%s_stairs_%s" % [room.name, side]
@@ -99,6 +111,7 @@ func _add_stairs(side: String) -> void:
 	s.height_change = stair_hc.value
 	s.length        = stair_len.value
 	s.clearance     = stair_cl.value
+	s.floor_thickness = floor_t
 	s.step_count    = int(stair_steps.value)
 	# HIGH end faces the same direction as the attachment side, stairs rise away from the source room.
 	s.high_end = side
@@ -122,9 +135,15 @@ func _add_stairs(side: String) -> void:
 	s.owner = dock.scene_query.edited_root()
 	s.position = stairs_pos
 
-	var floor_t: float = room.wall_floor.thickness if room.wall_floor else 0.0
 	var cv: float = -room.size.y / 2.0 + _door_h / 2.0 + floor_t
-	room.add_doorway(side, 0.0, cv, _door_w, _door_h)
+	var d_low := DoorEntry.new()
+	d_low.side = "low"; d_low.center_u = 0.0; d_low.center_v = cv
+	d_low.width = _door_w; d_low.height = _door_h
+	s.door_list.append(d_low)
+	var d_high := DoorEntry.new()
+	d_high.side = "high"; d_high.center_u = 0.0; d_high.center_v = cv
+	d_high.width = _door_w; d_high.height = _door_h
+	s.door_list.append(d_high)
 
 	s.rebuild()
 

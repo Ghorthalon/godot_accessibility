@@ -32,8 +32,10 @@ var corner_selector: CornerSelector  # shared selection, set by tab_cursor
 
 signal cursor_jumped
 
-var tab_rooms  # set in _ready exposes room actions to other tabs
-var tab_place  # set in _ready exposes place actions to other tabs
+var tab_rooms   # set in _ready exposes room actions to other tabs
+var tab_stairs  # set in _ready exposes stairs actions to other tabs
+var tab_ramps   # set in _ready exposes ramp actions to other tabs
+var tab_place   # set in _ready exposes place actions to other tabs
 
 var announce: Label
 var _snd_object:   AudioStreamPlayer
@@ -88,12 +90,12 @@ func _ready() -> void:
 	tab_rooms.dock = self
 	tabs.add_child(tab_rooms)
 
-	var tab_ramps = preload("res://addons/accessible_rooms/tab_ramps.gd").new()
+	tab_ramps = preload("res://addons/accessible_rooms/tab_ramps.gd").new()
 	tab_ramps.name = "Ramps"
 	tab_ramps.dock = self
 	tabs.add_child(tab_ramps)
 
-	var tab_stairs = preload("res://addons/accessible_rooms/tab_stairs.gd").new()
+	tab_stairs = preload("res://addons/accessible_rooms/tab_stairs.gd").new()
 	tab_stairs.name = "Stairs"
 	tab_stairs.dock = self
 	tabs.add_child(tab_stairs)

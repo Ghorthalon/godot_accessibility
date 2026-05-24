@@ -28,6 +28,8 @@ func _ready() -> void:
 	nav_control.corner_a.connect(func(): dock.corner_selector._set_corner_a())
 	nav_control.corner_b.connect(func(): dock.corner_selector._set_corner_b())
 	nav_control.place_room_from_corners.connect(func(): dock.tab_rooms._place_room_from_corners())
+	nav_control.place_stairs_from_corners.connect(func(): dock.tab_stairs._place_stairs_from_corners())
+	nav_control.place_ramps_from_corners.connect(func(): dock.tab_ramps._place_ramps_from_corners())
 	nav_control.nudge_node_to_floor.connect(func(): dock.tab_place._nudge_to_floor())
 	nav_control.snap_node_to_wall.connect(func(): dock.tab_place._snap_to_nearest_wall())
 	nav_control.snap_node_to_doorway.connect(func(): dock.tab_place._snap_to_nearest_doorway())

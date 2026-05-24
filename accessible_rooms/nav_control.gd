@@ -17,6 +17,7 @@ extends Panel
 ##   Ctrl+R                  new standalone room at cursor
 ##   Ctrl+D                  punch door at cursor (nearest wall)
 ##   Ctrl+1 / Ctrl+2 / Ctrl+3   set corner A / B / place room from corners
+##   Ctrl+4 / Ctrl+5            place staircase / ramp from corners
 ##   Shift+F                 nudge selected node to floor
 ##   Shift+W                 snap selected node to nearest wall
 ##   Shift+D                 snap selected node to nearest doorway
@@ -39,6 +40,8 @@ signal punch_door_at_cursor
 signal corner_a
 signal corner_b
 signal place_room_from_corners
+signal place_stairs_from_corners
+signal place_ramps_from_corners
 signal nudge_node_to_floor
 signal snap_node_to_wall
 signal snap_node_to_doorway
@@ -99,6 +102,8 @@ func _gui_input(event: InputEvent) -> void:
 			KEY_1:     accept_event(); corner_a.emit()
 			KEY_2:     accept_event(); corner_b.emit()
 			KEY_3:     accept_event(); place_room_from_corners.emit()
+			KEY_4:     accept_event(); place_stairs_from_corners.emit()
+			KEY_5:     accept_event(); place_ramps_from_corners.emit()
 		return
 
 	# Plain keys  move cursor, snap to floor/room, probe, report location

@@ -7,6 +7,8 @@ var ramp_w: SpinBox
 var ramp_len: SpinBox
 var ramp_hc: SpinBox
 var ramp_cl: SpinBox
+var ramp_landing_low: SpinBox
+var ramp_landing_high: SpinBox
 var door_w_ref: SpinBox  # mirrors dock's door_w, set via tab_rooms if needed
 var _door_w: float = 1.2
 var _door_h: float = 2.8
@@ -18,16 +20,24 @@ func _ready() -> void:
 	var rl := Label.new(); rl.text = "Ramp size (m):"
 	add_child(rl)
 
-	ramp_w   = _spinbox(0.5,  50.0,  0.5, 2.0)
-	ramp_len = _spinbox(0.5,  100.0, 0.5, 4.0)
-	ramp_hc  = _spinbox(0.1,  20.0,  0.1, 1.0)
-	ramp_cl  = _spinbox(1.0,  10.0,  0.1, 2.4)
+	ramp_w            = _spinbox(0.5,  50.0,  0.5, 2.0)
+	ramp_len          = _spinbox(0.5,  100.0, 0.5, 4.0)
+	ramp_hc           = _spinbox(0.1,  20.0,  0.1, 1.0)
+	ramp_cl           = _spinbox(1.0,  10.0,  0.1, 2.4)
+	ramp_landing_low  = _spinbox(0.0,  10.0,  0.1, 0.5)
+	ramp_landing_high = _spinbox(0.0,  10.0,  0.1, 0.5)
 
 	var row := HBoxContainer.new()
 	for pair in [["W:", ramp_w], ["Len:", ramp_len], ["Rise:", ramp_hc], ["Clear:", ramp_cl]]:
 		var lbl := Label.new(); lbl.text = pair[0]
 		row.add_child(lbl); row.add_child(pair[1])
 	add_child(row)
+
+	var landing_row := HBoxContainer.new()
+	for pair in [["Land Low:", ramp_landing_low], ["Land High:", ramp_landing_high]]:
+		var lbl := Label.new(); lbl.text = pair[0]
+		landing_row.add_child(lbl); landing_row.add_child(pair[1])
+	add_child(landing_row)
 
 	var surface_row := HBoxContainer.new()
 	build_walls = CheckBox.new()
@@ -63,6 +73,7 @@ func _ready() -> void:
 		_standalone_dir = ["north", "south", "east", "west"][idx])
 	add_child(dir_btn)
 	_btn("New standalone ramp at cursor", _new_standalone_ramp)
+	_btn("Place ramp from corners", _place_ramps_from_corners)
 
 	add_child(HSeparator.new())
 	for side in ["north", "south", "east", "west"]:
@@ -104,6 +115,8 @@ func _add_ramp(side: String) -> void:
 	r.height_change = ramp_hc.value
 	r.clearance     = ramp_cl.value
 	r.floor_thickness = floor_t
+	r.landing_depth_low  = ramp_landing_low.value
+	r.landing_depth_high = ramp_landing_high.value
 	# HIGH end faces the same direction as the attachment side, ramp rises away from the source room.
 	r.high_end = side
 
@@ -160,6 +173,8 @@ func _new_standalone_ramp() -> void:
 	r.length        = ramp_len.value
 	r.height_change = ramp_hc.value
 	r.clearance     = ramp_cl.value
+	r.landing_depth_low  = ramp_landing_low.value
+	r.landing_depth_high = ramp_landing_high.value
 	r.high_end      = _standalone_dir
 
 	var footprint: Vector3
@@ -184,6 +199,65 @@ func _new_standalone_ramp() -> void:
 		if tab.has_method("_refresh"): tab._refresh()
 
 	dock._say(("Placed standalone ramp at cursor, high end %s. " +
+		"Rise %.1fm over %.1fm (%.0f deg).") % \
+		[r.high_end, r.height_change, r.length, r.slope_degrees()])
+
+# ---------------------------------------------------------------------------
+
+func _place_ramps_from_corners() -> void:
+	var root: Node = dock.scene_query.placement_parent()
+	if root == null: dock._say_err("No scene open."); return
+	var aabb: AABB = dock.corner_selector.get_aabb()
+
+	var w_axis: float
+	var l_axis: float
+	match _standalone_dir:
+		"north", "south":
+			w_axis = aabb.size.x; l_axis = aabb.size.z
+		"east", "west":
+			w_axis = aabb.size.z; l_axis = aabb.size.x
+		_:
+			w_axis = aabb.size.x; l_axis = aabb.size.z
+	if w_axis < 0.5 or l_axis < 0.5 or aabb.size.y < 0.1:
+		dock._say_err("Corners too close: need at least 0.5m width, 0.5m length, and 0.1m rise. Set corner A and corner B first."); return
+
+	var r := Ramp3D.new()
+	r.name = "Ramp%d" % (root.get_child_count() + 1)
+	r.width         = w_axis
+	r.length        = l_axis
+	r.height_change = aabb.size.y
+	r.clearance     = ramp_cl.value
+	r.landing_depth_low  = ramp_landing_low.value
+	r.landing_depth_high = ramp_landing_high.value
+	r.high_end      = _standalone_dir
+
+	var footprint: Vector3
+	match r.high_end:
+		"north", "south": footprint = Vector3(r.width, r.height_change + r.clearance, r.length)
+		"east",  "west":  footprint = Vector3(r.length, r.height_change + r.clearance, r.width)
+
+	var pos := Vector3(
+		aabb.position.x + aabb.size.x / 2.0,
+		aabb.position.y,
+		aabb.position.z + aabb.size.z / 2.0)
+
+	var conflict: String = dock.scene_query.first_overlap(pos, _ramp_footprint(footprint), root)
+	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
+		dock._say("Cannot place ramp: overlaps with %s. Hold Shift to force." % conflict)
+		return
+	elif conflict != "":
+		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
+
+	_apply_surface_settings(r)
+	root.add_child(r)
+	r.owner = dock.scene_query.edited_root()
+	r.position = pos
+	r.rebuild()
+
+	for tab in get_parent().get_children():
+		if tab.has_method("_refresh"): tab._refresh()
+
+	dock._say(("Placed ramp from corners, high end %s. " +
 		"Rise %.1fm over %.1fm (%.0f deg).") % \
 		[r.high_end, r.height_change, r.length, r.slope_degrees()])
 

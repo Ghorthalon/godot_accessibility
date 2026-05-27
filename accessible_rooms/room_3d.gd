@@ -120,7 +120,7 @@ func _build_wall(side: String) -> void:
 			center = Vector3(-size.x/2, size.y/2, 0)
 			basis_u = Vector3.FORWARD; basis_v = Vector3.UP
 
-	var rects := _slice([Rect2(-u/2, -v/2, u, v)], wall_cfg.openings + _get_overlap_suppressions(side))
+	var rects := _slice([Rect2(-u/2, -v/2, u, v)], wall_cfg.openings + _get_overlap_suppressions(side) + _get_child_connector_cutouts(side))
 	var normal := basis_u.cross(basis_v).normalized()
 	var inward: Vector3 = -NORMALS[side]
 	var thickness: float = wall_cfg.thickness
@@ -184,10 +184,41 @@ func _get_overlap_suppressions(side: String) -> Array[Rect2]:
 			continue
 		var overlap := _compute_wall_local_overlap(side, other)
 		if overlap.size.x <= EPSILON or overlap.size.y <= EPSILON: continue
-		# Lower node path wins. higher path suppresses its geometry in the overlap.
-		if str(get_path()) < str(other.get_path()): continue
+		if _wins_overlap_against(other, side, opp): continue
 		result.append(overlap)
 	return result
+
+## For side == "ceiling", returns cutout Rect2s from child Stairs3D/Ramp3D nodes
+## whose clearance volume exceeds this room's ceiling height. Each child contributes
+## a Rect2 in ceiling-local 2D coords (u = room-local X, v = -room-local Z).
+## Returns [] for other sides. floor cutouts for downward connectors are TODO.
+func _get_child_connector_cutouts(side: String) -> Array[Rect2]:
+	var result: Array[Rect2] = []
+	if side != "ceiling": return result
+	var world_ceiling_y: float = global_position.y + size.y
+	for c in get_children():
+		if c is Stairs3D:
+			var s := c as Stairs3D
+			if s.pokes_through_ceiling(world_ceiling_y):
+				result.append(s.ceiling_cutout_rect())
+		elif c is Ramp3D:
+			var r := c as Ramp3D
+			if r.pokes_through_ceiling(world_ceiling_y):
+				result.append(r.ceiling_cutout_rect())
+	return result
+
+# Returns true if self's wall should win (and other should suppress).
+# Tiebreak order: WallConfig.priority (higher wins), then bounding_volume (bigger wins), then nodepath (lower wins).
+func _wins_overlap_against(other: Room3D, side: String, opp: String) -> bool:
+	var my_cfg := cfg(side)
+	var other_cfg := other.cfg(opp)
+	var my_pri: int = my_cfg.priority if my_cfg else 0
+	var other_pri: int = other_cfg.priority if other_cfg else 0
+	if my_pri != other_pri: return my_pri > other_pri
+	var my_vol := bounding_volume()
+	var other_vol := other.bounding_volume()
+	if my_vol != other_vol: return my_vol > other_vol
+	return str(get_path()) < str(other.get_path())
 
 func _slice(rects: Array, openings: Array) -> Array:
 	for hole in openings:

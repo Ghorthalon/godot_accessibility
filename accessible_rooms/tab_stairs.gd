@@ -10,11 +10,7 @@ var stair_cl: SpinBox
 var stair_steps: SpinBox
 var stair_landing_low: SpinBox
 var stair_landing_high: SpinBox
-var _door_w: float = 1.2
-var _door_h: float = 2.8
 var _standalone_dir: String = "north"
-var build_walls: CheckBox
-var build_ceiling: CheckBox
 var build_risers: CheckBox
 
 func _ready() -> void:
@@ -42,36 +38,13 @@ func _ready() -> void:
 		landing_row.add_child(lbl); landing_row.add_child(pair[1])
 	add_child(landing_row)
 
-	var surface_row := HBoxContainer.new()
-	build_walls = CheckBox.new()
-	build_walls.text = "Build walls"
-	build_walls.button_pressed = true
-	build_ceiling = CheckBox.new()
-	build_ceiling.text = "Build ceiling"
-	build_ceiling.button_pressed = false
 	build_risers = CheckBox.new()
 	build_risers.text = "Build risers"
 	build_risers.button_pressed = true
-	surface_row.add_child(build_walls)
-	surface_row.add_child(build_ceiling)
-	surface_row.add_child(build_risers)
-	add_child(surface_row)
+	add_child(build_risers)
 
 	add_child(HSeparator.new())
-	var dl := Label.new(); dl.text = "Connecting doorway (m):"
-	add_child(dl)
-	var door_w_spin := _spinbox(0.5, 20.0, 0.1, 1.2)
-	var door_h_spin := _spinbox(0.5, 20.0, 0.1, 2.8)
-	door_w_spin.value_changed.connect(func(v): _door_w = v)
-	door_h_spin.value_changed.connect(func(v): _door_h = v)
-	var dr := HBoxContainer.new()
-	for pair in [["W:", door_w_spin], ["H:", door_h_spin]]:
-		var lbl := Label.new(); lbl.text = pair[0]
-		dr.add_child(lbl); dr.add_child(pair[1])
-	add_child(dr)
-
-	add_child(HSeparator.new())
-	var dir_lbl := Label.new(); dir_lbl.text = "Standalone staircase high end:"
+	var dir_lbl := Label.new(); dir_lbl.text = "Staircase high end:"
 	add_child(dir_lbl)
 	var dir_btn := OptionButton.new()
 	for d in ["north", "south", "east", "west"]:
@@ -79,107 +52,34 @@ func _ready() -> void:
 	dir_btn.item_selected.connect(func(idx: int) -> void:
 		_standalone_dir = ["north", "south", "east", "west"][idx])
 	add_child(dir_btn)
-	_btn("New standalone staircase at cursor", _new_standalone_stairs)
-	_btn("Place staircase from corners", _place_stairs_from_corners)
 
 	add_child(HSeparator.new())
-	for side in ["north", "south", "east", "west"]:
-		_btn("Add staircase to %s of current room" % side, _add_stairs.bind(side))
+	var inside_lbl := Label.new(); inside_lbl.text = "Place inside selected room:"
+	add_child(inside_lbl)
+	_btn("Place staircase in current room at cursor", _place_in_room_at_cursor)
+	_btn("Place staircase in current room from corners", _place_in_room_from_corners)
+
+	add_child(HSeparator.new())
+	var standalone_lbl := Label.new(); standalone_lbl.text = "Place standalone (no parent room):"
+	add_child(standalone_lbl)
+	_btn("New standalone staircase at cursor", _new_standalone_stairs)
+	_btn("Place standalone staircase from corners", _place_stairs_from_corners)
 
 	add_child(HSeparator.new())
 	var hint := Label.new()
-	hint.text = ("Workflow: (1) Select a room. (2) Add staircase to a side. " +
-		"(3) Place the connecting room at the far end, elevated by the Rise amount.\n" +
-		"Important: do NOT place the connecting room adjacent first, the staircase needs that gap.\n" +
-		"Len is the TOTAL footprint (low landing + slope + high landing). The slope " +
-		"occupies the middle (length - landing_low - landing_high).\n" +
-		"Clearance must exceed the player capsule height (default 2.0 m), use 2.6 m+ for safety.\n" +
+	hint.text = ("Workflow: (1) Build a room. (2) Select it. (3) Place a staircase inside.\n" +
+		"If the stair's clearance (rise + clearance value) exceeds the room ceiling, " +
+		"the room auto-cuts a hole in its ceiling over the slope + high landing.\n" +
+		"For a connecting upper room: place a second room above with floor aligned to " +
+		"the stair top, then punch a matching hole in its floor.\n" +
+		"Len is the TOTAL footprint (low landing + slope + high landing). " +
+		"Clearance must exceed the player capsule height (default 2.0m), use 2.6m+ for safety.\n" +
 		"Steps (0=auto) divides the rise/slope_length into equal steps using ~18 cm ideal step height.")
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(hint)
 
-func _add_stairs(side: String) -> void:
-	if not dock.current_entity is Room3D:
-		dock._say("No room selected. Select a Room3D first.")
-		return
-	var root: Node = dock.scene_query.placement_parent()
-	if root == null: dock._say("No scene open."); return
-	var room := dock.current_entity as Room3D
-	var floor_t: float = room.wall_floor.thickness if room.wall_floor else 0.0
-
-	var clearance_safety := 0.05
-	if _door_h + floor_t > stair_cl.value - clearance_safety:
-		dock._say_err(("Cannot place staircase: door height %.2fm + floor thickness %.2fm exceeds " +
-			"clearance %.2fm. Lower door height (≤%.2fm) or raise clearance (≥%.2fm).") % \
-			[_door_h, floor_t, stair_cl.value,
-			 stair_cl.value - floor_t - clearance_safety,
-			 _door_h + floor_t + clearance_safety])
-		return
-
+func _build_stair_node() -> Stairs3D:
 	var s := Stairs3D.new()
-	s.name = "%s_stairs_%s" % [room.name, side]
-	s.width         = stair_w.value
-	s.height_change = stair_hc.value
-	s.length        = stair_len.value
-	s.clearance     = stair_cl.value
-	s.floor_thickness = floor_t
-	s.step_count    = int(stair_steps.value)
-	s.landing_depth_low  = stair_landing_low.value
-	s.landing_depth_high = stair_landing_high.value
-	# HIGH end faces the same direction as the attachment side, stairs rise away from the source room.
-	s.high_end = side
-
-	var footprint: Vector3
-	match side:
-		"north", "south": footprint = Vector3(s.width, s.clearance, s.length)
-		"east",  "west":  footprint = Vector3(s.length, s.clearance, s.width)
-	var stairs_pos: Vector3 = room.position + room.neighbor_offset(side, footprint)
-
-	var conflict: String = dock.scene_query.first_overlap(stairs_pos, _stairs_footprint(footprint), root)
-	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
-		dock._say(("Cannot place staircase: %s already occupies the %s footprint. " +
-			"Remove or move it first, or hold Shift to force.") % [conflict, side])
-		return
-	elif conflict != "":
-		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
-
-	_apply_surface_settings(s)
-	root.add_child(s)
-	s.owner = dock.scene_query.edited_root()
-	s.position = stairs_pos
-
-	var cv: float = -room.size.y / 2.0 + _door_h / 2.0 + floor_t
-	var d_low := DoorEntry.new()
-	d_low.side = "low"; d_low.center_u = 0.0; d_low.center_v = cv
-	d_low.width = _door_w; d_low.height = _door_h
-	s.door_list.append(d_low)
-	var d_high := DoorEntry.new()
-	d_high.side = "high"; d_high.center_u = 0.0; d_high.center_v = cv
-	d_high.width = _door_w; d_high.height = _door_h
-	s.door_list.append(d_high)
-
-	s.rebuild()
-
-	for tab in get_parent().get_children():
-		if tab.has_method("_refresh"): tab._refresh()
-
-	var n := s._effective_step_count()
-	var hi_pos: Vector3 = s.position + s.high_end_room_offset(Vector3(4, 3, 4))
-	dock._say(("Added staircase to %s of %s. " +
-		"%d steps, %.0fcm rise / %.0fcm deep each. " +
-		"Rises %.1fm over %.1fm (%.0f deg). " +
-		"Place connecting room elevated %.1fm, centre near %s (varies with room size).") % \
-		[side, room.name, n,
-		 s.step_height() * 100.0, s.step_depth() * 100.0,
-		 s.height_change, s.length, s.slope_degrees(),
-		 s.height_change, hi_pos])
-
-func _new_standalone_stairs() -> void:
-	var root: Node = dock.scene_query.placement_parent()
-	if root == null: dock._say("No scene open."); return
-
-	var s := Stairs3D.new()
-	s.name = "Stairs%d" % (root.get_child_count() + 1)
 	s.width         = stair_w.value
 	s.height_change = stair_hc.value
 	s.length        = stair_len.value
@@ -188,20 +88,93 @@ func _new_standalone_stairs() -> void:
 	s.landing_depth_low  = stair_landing_low.value
 	s.landing_depth_high = stair_landing_high.value
 	s.high_end      = _standalone_dir
+	s.risers_enabled = build_risers.button_pressed
+	return s
+
+func _place_in_room_at_cursor() -> void:
+	if not dock.current_entity is Room3D:
+		dock._say_err("No room selected. Select a Room3D first."); return
+	var room := dock.current_entity as Room3D
+	var s := _build_stair_node()
+	s.floor_thickness = room.wall_floor.thickness if room.wall_floor else 0.0
+	s.name = "%s_stairs%d" % [room.name, room.get_child_count() + 1]
+	room.add_child(s)
+	s.owner = dock.scene_query.edited_root()
+	s.position = room.to_local(dock.cursor)
+	s.rebuild()
+	for tab in get_parent().get_children():
+		if tab.has_method("_refresh"): tab._refresh()
+	var n := s._effective_step_count()
+	dock._say_ok(("Placed staircase in %s at cursor, high end %s. " +
+		"%d steps, %.0fcm rise / %.0fcm deep each. " +
+		"Rises %.1fm over %.1fm (%.0f deg).") % \
+		[room.name, s.high_end, n,
+		 s.step_height() * 100.0, s.step_depth() * 100.0,
+		 s.height_change, s.length, s.slope_degrees()])
+
+func _place_in_room_from_corners() -> void:
+	if not dock.current_entity is Room3D:
+		dock._say_err("No room selected. Select a Room3D first."); return
+	var room := dock.current_entity as Room3D
+	var aabb: AABB = dock.corner_selector.get_aabb()
+
+	var w_axis: float
+	var l_axis: float
+	match _standalone_dir:
+		"north", "south":
+			w_axis = aabb.size.x; l_axis = aabb.size.z
+		"east", "west":
+			w_axis = aabb.size.z; l_axis = aabb.size.x
+		_:
+			w_axis = aabb.size.x; l_axis = aabb.size.z
+	if w_axis < 0.5 or l_axis < 0.5 or aabb.size.y < 0.1:
+		dock._say_err("Corners too close: need at least 0.5m width, 0.5m length, and 0.1m rise. Set corner A and corner B first."); return
+
+	var s := _build_stair_node()
+	s.floor_thickness = room.wall_floor.thickness if room.wall_floor else 0.0
+	s.width  = w_axis
+	s.length = l_axis
+	s.height_change = aabb.size.y
+	s.name = "%s_stairs%d" % [room.name, room.get_child_count() + 1]
+
+	var world_pos := Vector3(
+		aabb.position.x + aabb.size.x / 2.0,
+		aabb.position.y,
+		aabb.position.z + aabb.size.z / 2.0)
+	room.add_child(s)
+	s.owner = dock.scene_query.edited_root()
+	s.position = room.to_local(world_pos)
+	s.rebuild()
+
+	for tab in get_parent().get_children():
+		if tab.has_method("_refresh"): tab._refresh()
+	var n := s._effective_step_count()
+	dock._say_ok(("Placed staircase in %s from corners, high end %s. " +
+		"%d steps, %.0fcm rise / %.0fcm deep each. " +
+		"Rises %.1fm over %.1fm (%.0f deg).") % \
+		[room.name, s.high_end, n,
+		 s.step_height() * 100.0, s.step_depth() * 100.0,
+		 s.height_change, s.length, s.slope_degrees()])
+
+func _new_standalone_stairs() -> void:
+	var root: Node = dock.scene_query.placement_parent()
+	if root == null: dock._say("No scene open."); return
+
+	var s := _build_stair_node()
+	s.name = "Stairs%d" % (root.get_child_count() + 1)
 
 	var footprint: Vector3
 	match s.high_end:
 		"north", "south": footprint = Vector3(s.width, s.height_change + s.clearance, s.length)
 		"east",  "west":  footprint = Vector3(s.length, s.height_change + s.clearance, s.width)
 
-	var conflict: String = dock.scene_query.first_overlap(dock.cursor, _stairs_footprint(footprint), root)
+	var conflict: String = dock.scene_query.first_overlap(dock.cursor, footprint, root)
 	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
 		dock._say("Cannot place staircase: overlaps with %s. Move cursor clear first, or hold Shift to force." % conflict)
 		return
 	elif conflict != "":
 		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
 
-	_apply_surface_settings(s)
 	root.add_child(s)
 	s.owner = dock.scene_query.edited_root()
 	s.position = dock.cursor
@@ -235,16 +208,11 @@ func _place_stairs_from_corners() -> void:
 	if w_axis < 0.5 or l_axis < 0.5 or aabb.size.y < 0.1:
 		dock._say_err("Corners too close: need at least 0.5m width, 0.5m length, and 0.1m rise. Set corner A and corner B first."); return
 
-	var s := Stairs3D.new()
-	s.name = "Stairs%d" % (root.get_child_count() + 1)
-	s.width         = w_axis
-	s.length        = l_axis
+	var s := _build_stair_node()
+	s.width  = w_axis
+	s.length = l_axis
 	s.height_change = aabb.size.y
-	s.clearance     = stair_cl.value
-	s.step_count    = int(stair_steps.value)
-	s.landing_depth_low  = stair_landing_low.value
-	s.landing_depth_high = stair_landing_high.value
-	s.high_end      = _standalone_dir
+	s.name = "Stairs%d" % (root.get_child_count() + 1)
 
 	var footprint: Vector3
 	match s.high_end:
@@ -256,14 +224,13 @@ func _place_stairs_from_corners() -> void:
 		aabb.position.y,
 		aabb.position.z + aabb.size.z / 2.0)
 
-	var conflict: String = dock.scene_query.first_overlap(pos, _stairs_footprint(footprint), root)
+	var conflict: String = dock.scene_query.first_overlap(pos, footprint, root)
 	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
 		dock._say("Cannot place staircase: overlaps with %s. Hold Shift to force." % conflict)
 		return
 	elif conflict != "":
 		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
 
-	_apply_surface_settings(s)
 	root.add_child(s)
 	s.owner = dock.scene_query.edited_root()
 	s.position = pos
@@ -279,17 +246,6 @@ func _place_stairs_from_corners() -> void:
 		[s.high_end, n,
 		 s.step_height() * 100.0, s.step_depth() * 100.0,
 		 s.height_change, s.length, s.slope_degrees()])
-
-
-func _apply_surface_settings(s: Stairs3D) -> void:
-	s.wall_sides_enabled = build_walls.button_pressed
-	s.ceiling_enabled    = build_ceiling.button_pressed
-	s.risers_enabled     = build_risers.button_pressed
-
-func _stairs_footprint(sz: Vector3) -> Vector3:
-	if build_walls.button_pressed:
-		return sz
-	return Vector3(sz.x, 0.01, sz.z)
 
 func _spinbox(min_v: float, max_v: float, step_v: float, default_v: float) -> SpinBox:
 	var s := SpinBox.new()

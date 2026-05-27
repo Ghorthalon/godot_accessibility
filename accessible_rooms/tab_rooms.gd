@@ -155,6 +155,8 @@ func _ready() -> void:
 	_btn_into(dw_tab, "Punch hole at cursor (on nearest wall)", _punch_hole_at_cursor)
 	for side in ["north", "south", "east", "west"]:
 		_btn_into(dw_tab, "Punch doorway %s on current" % side, _punch.bind(side))
+	for side in ["floor", "ceiling"]:
+		_btn_into(dw_tab, "Punch hole in %s on current (at cursor XZ)" % side, _punch_horizontal.bind(side))
 
 	dw_tab.add_child(HSeparator.new())
 
@@ -280,33 +282,18 @@ func _add_neighbor(side: String) -> void:
 	# This ensures r.rebuild() below is the only rebuild that runs.
 	var back_side: String = entity.neighbor_doorway_side(side)
 	var new_floor_t: float = r.wall_floor.thickness if r.wall_floor else 0.0
-	var entity_owns_doors: bool = entity is Stairs3D or entity is Ramp3D
 	var cv_new: float = 0.0
-	if back_side != "" and not entity_owns_doors:
-		# Room-to-room: tab spinboxes drive the doorway dimensions.
+	if back_side != "":
 		cv_new = -r.size.y / 2.0 + door_h.value / 2.0 + new_floor_t
 		r.add_doorway(back_side, 0.0, cv_new, door_w.value, door_h.value)
-	elif back_side != "" and entity_owns_doors:
-		# Stair/ramp: use the entity's stored high-end DoorEntry, but recompute
-		# cv against the new room's dimensions so it sits flush on the floor.
-		for d in entity.door_list:
-			if d.side == "high":
-				d.center_v = -r.size.y / 2.0 + d.height / 2.0 + new_floor_t
-		# The stair's apply_doors_to_rooms() (called below) will mirror the
-		# doorway onto r. We deliberately do NOT add it here.
 	_apply_surface_settings(r)
 
 	root.add_child(r); r.owner = dock.scene_query.edited_root()
 	r.position = new_pos
 	r.rebuild()   # single rebuild, config fully set, not in tree when add_doorway was called
 
-	# Placeholder for new room's backside doorway (room-to-room flow only).
-	if back_side != "" and not entity_owns_doors:
+	if back_side != "":
 		_make_door_placeholder(r, back_side, 0.0, cv_new, door_w.value, door_h.value)
-
-	if entity_owns_doors:
-		# Mirror the stair/ramp's high-end DoorEntry onto the new room.
-		entity.apply_doors_to_rooms()
 
 	if entity.has_wall(side):
 		var cur_room := entity as Room3D
@@ -332,6 +319,7 @@ func _punch(side: String) -> void:
 
 func _make_door_placeholder(room: Room3D, side: String, cu: float, cv: float, w: float, h: float) -> void:
 	if not create_door_placeholder.button_pressed: return
+	if side in ["floor", "ceiling"]: return
 	var scene_root: Node = dock.scene_query.edited_root()
 	if scene_root == null: return
 	var placeholder := Node3D.new()
@@ -508,17 +496,34 @@ func _punch_hole_at_cursor() -> void:
 	if not dock.current_entity is Room3D: dock._say("No room selected."); return
 	var room := dock.current_entity as Room3D
 	var cur: Vector3 = dock.cursor
-	var side: String = _closest_wall(room, cur)
-	var local_v: float = cur.y - (room.position.y + room.size.y / 2.0)
+	var side: String = _closest_surface(room, cur)
 	var local_u: float
+	var local_v: float
 	match side:
 		"north", "south":
 			local_u = cur.x - room.position.x
+			local_v = cur.y - (room.position.y + room.size.y / 2.0)
 		"east", "west":
 			local_u = room.position.z - cur.z
+			local_v = cur.y - (room.position.y + room.size.y / 2.0)
+		"floor", "ceiling":
+			local_u = cur.x - room.position.x
+			local_v = room.position.z - cur.z
 	room.punch_hole(side, local_u, local_v, door_w.value, door_h.value)
 	_refresh()
-	dock._say("Hole punched on %s wall at offset %.1f, %.1f (%.1fm × %.1fm)." % \
+	dock._say("Hole punched on %s at offset %.1f, %.1f (%.1fm × %.1fm)." % \
+		[side, local_u, local_v, door_w.value, door_h.value])
+	_refresh_door_list()
+
+func _punch_horizontal(side: String) -> void:
+	if not dock.current_entity is Room3D: dock._say("No room selected."); return
+	var room := dock.current_entity as Room3D
+	var cur: Vector3 = dock.cursor
+	var local_u: float = cur.x - room.position.x
+	var local_v: float = room.position.z - cur.z
+	room.punch_hole(side, local_u, local_v, door_w.value, door_h.value)
+	_refresh()
+	dock._say("Hole punched in %s at room-local (%.1f, %.1f) (%.1fm × %.1fm)." % \
 		[side, local_u, local_v, door_w.value, door_h.value])
 	_refresh_door_list()
 
@@ -529,6 +534,21 @@ func _closest_wall(room: Room3D, cur: Vector3) -> String:
 		"south": abs(cur.z - (rp.z + rs.z/2)),
 		"east":  abs(cur.x - (rp.x + rs.x/2)),
 		"west":  abs(cur.x - (rp.x - rs.x/2)),
+	}
+	var best := "north"
+	for s in dists:
+		if dists[s] < dists[best]: best = s
+	return best
+
+func _closest_surface(room: Room3D, cur: Vector3) -> String:
+	var rp := room.position; var rs := room.size
+	var dists := {
+		"north":   abs(cur.z - (rp.z - rs.z/2)),
+		"south":   abs(cur.z - (rp.z + rs.z/2)),
+		"east":    abs(cur.x - (rp.x + rs.x/2)),
+		"west":    abs(cur.x - (rp.x - rs.x/2)),
+		"floor":   abs(cur.y - rp.y),
+		"ceiling": abs(cur.y - (rp.y + rs.y)),
 	}
 	var best := "north"
 	for s in dists:
@@ -570,13 +590,11 @@ func _resize_fill_ns() -> void:
 
 func _door_list_owner() -> Object:
 	var e = dock.current_entity
-	if e is Room3D or e is Stairs3D or e is Ramp3D: return e
+	if e is Room3D: return e
 	return null
 
 func _door_list_sides() -> Array:
-	var e = dock.current_entity
-	if e is Stairs3D or e is Ramp3D: return ["low", "high"]
-	return ["north", "south", "east", "west"]
+	return ["north", "south", "east", "west", "floor", "ceiling"]
 
 func _refresh_door_list() -> void:
 	_door_item_list.clear()
@@ -656,10 +674,7 @@ func _apply_door_changes() -> void:
 		d.center_u = spins[0].value; d.center_v = spins[1].value
 		d.width = spins[2].value; d.height = spins[3].value
 	if scene_edit != null: d.scene_path = scene_edit.text.strip_edges()
-	if owner_obj is Room3D:
-		(owner_obj as Room3D)._queue_rebuild()
-	else:
-		owner_obj.apply_doors_to_rooms()
+	(owner_obj as Room3D)._queue_rebuild()
 	_refresh_door_list()
 	dock._say("Door %d on %s updated." % [_current_door_idx, owner_obj.name])
 
@@ -679,21 +694,8 @@ func _place_door_scene() -> void:
 	var packed := load(d.scene_path) as PackedScene
 	if packed == null: dock._say_err("Failed to load scene."); return
 
-	# Resolve the actual Room3D wall this door punches through. For Room3D owners
-	# that's the owner itself; for stair/ramp owners it's the connected room on
-	# the corresponding end.
-	var room: Room3D
-	var room_side: String
-	if owner_obj is Room3D:
-		room = owner_obj as Room3D
-		room_side = d.side
-	else:
-		# Stairs3D or Ramp3D
-		var at_low: bool = (d.side == "low")
-		room = owner_obj._find_connected_room(at_low)
-		if room == null:
-			dock._say_err("No connected room found on the %s end of %s." % [d.side, owner_obj.name]); return
-		room_side = owner_obj.room_side_at_low_end() if at_low else owner_obj.room_side_at_high_end()
+	var room: Room3D = owner_obj as Room3D
+	var room_side: String = d.side
 
 	var tf: Transform3D = dock.scene_query.wall_facing_transform(room, room_side, d.center_u, d.center_v)
 	dock.tab_place.instantiate_aligned(packed, tf, room,
@@ -705,11 +707,7 @@ func _remove_selected_door() -> void:
 		dock._say("No door selected."); return
 	if _current_door_idx >= owner_obj.door_list.size():
 		dock._say("Door index out of range."); return
-	if owner_obj is Room3D:
-		(owner_obj as Room3D).remove_door(_current_door_idx)
-	else:
-		owner_obj.door_list.remove_at(_current_door_idx)
-		owner_obj.apply_doors_to_rooms()
+	(owner_obj as Room3D).remove_door(_current_door_idx)
 	_refresh_door_list()
 	dock._say("Removed door %d from %s." % [_current_door_idx, owner_obj.name])
 

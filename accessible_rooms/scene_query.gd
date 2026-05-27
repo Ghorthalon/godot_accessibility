@@ -378,6 +378,11 @@ func _entity_footprint(entity: SpatialEntity3D) -> Vector3:
 		match r.high_end:
 			"north", "south": return Vector3(r.width, r.height_change + r.clearance, r.length)
 			"east",  "west":  return Vector3(r.length, r.height_change + r.clearance, r.width)
+	if entity is Stairs3D:
+		var s := entity as Stairs3D
+		match s.high_end:
+			"north", "south": return Vector3(s.width, s.height_change + s.clearance, s.length)
+			"east",  "west":  return Vector3(s.length, s.height_change + s.clearance, s.width)
 	return Vector3.ZERO
 
 ## Cast in dir, return hit Vector3 or null. 

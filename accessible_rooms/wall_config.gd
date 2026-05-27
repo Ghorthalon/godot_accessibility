@@ -14,3 +14,5 @@ extends Resource
 ## Subregion overlays with a different surface material.
 ## Each entry: {rect: Rect2, surface: String}
 @export var zones: Array[Dictionary] = []
+## Ownership priority when two rooms share a wall plane. Higher wins; ties fall back to room volume, then nodepath.
+@export var priority: int = 0

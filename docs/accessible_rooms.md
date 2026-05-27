@@ -53,6 +53,13 @@ This is where you create rooms. The rooms tab is divided into a few subtabs, as 
 * Measure space at cursor: This will scan the surrounding geometry and tell you how much free space you have in any direction.
 * Resize:
     * Resize room to fill E->W, resize room to fill N->S: These two controls will measure the current free space at the cursor and expand the room you have selected to fill it. This is useful if you have two rooms which are currently not connected, but want to connect them using another room, hallway, etc.
+* Move room to:
+    * x: The x coordinate to move the currently selected room to. This will make sure that walls still line up and openings between rooms are kept in tact.
+    * y: The y coordinate to move the selected room to.
+    * z: The z coordinate to move the current room to.
+    * Cascade: When moving rooms, moves all other connected rooms with it so your geometry stays in tact. Good for moving an entire section of map.
+    * set from cursor: Sets the x, y, and z values to where your cursor is.
+    * apply move: Applies the move. If any connections would be broken, it tells you. HOld shift to force the move anyway and break them.
 * w: The width of the room to create
 * h: the height of the room to create
 * d: the depth of the room to create
@@ -62,7 +69,9 @@ This is where you create rooms. The rooms tab is divided into a few subtabs, as 
 * Place room from corners: If you made a selection using the cursor, again, more on this below, this will fill the selection that you made with the room.
 * Add room to north of current: This will add a room to the north of the currently selected room. It takes the width, depth and height you have selected, positions the room so that its middle lines up with the middle of the northern wall, and automatically punches a doorway if build walls is enabled.
 * Add room to south, east and west of current: Exactly the same as north, except in any of the 3 remaining directions.
-
+* Gap detection:
+    * max gap: Gap detection let's you check if you have geometry which *should* connect but it isn't. This is how far of a gap it should still flag as a connection issue.
+    * Check gaps: This checks the placement parent for any rooms which are within max distance of another room, with openings that would allow you to walk through. This potentially let's players fall through the map. If this is desired, you can ignore this, but if it is not, you can fix them here. 
 
 ##### Doors & Walls subtab
 
@@ -95,20 +104,19 @@ This is where you create rooms. The rooms tab is divided into a few subtabs, as 
 
 #### Ramps:
 
-Ramps are basically just rooms, except they're tilted in a direction, and not level in the 3d coordinate system.
+Ramps are tilted sections of floor. They don't have walls or ceilings by themselves, so if they should have those, you should put them inside a room.
 
 * W: The width of the ramp
 * len: The length of the ramp
 * rise: How high the ramp should go.
-* clear: The clearance between the ramp's floor and the ramp's ceiling. This has to be at least slightly taller than your character.
-* Build walls: Whether to build walls for this ramp
-* Build ceiling: Whether to build ceiling for this ramp
-* Connecting doorway:
-    * w: The width of the doorway that's created when attaching this ramp to another room
-    * h: The height of the doorway that's created when attaching this ramp to another room
-* Standalone ramp high end: When placing a standalone ramp and not a connecting one, this selects which direction the ramp will slope up towards.
-* New standalone ramp at cursor: Exactly the same as new standalone room at cursor. This places the ramp where your cursor is, with it's center where the cursor is. 
-* Add ramp to north, south, east, west of current room: Adds the ramp at the specified side of the room currently selected in the rooms list. This will also automatically punch doorways using the settings entered above.
+* clear: The clearance between the ramp's floor and the ramp's ceiling. This has to be at least slightly taller than your character. This can automatically cut a hole out of the ceiling of it's parent room based on the clearance factor.
+* Land Low: The length of a section of flat floor placed at the bottom part of a ramp.
+* Land High: The same, except at the top end.
+* Standalone ramp high end: When placing a standalone ramp and not one based on corner selection, this selects which direction the ramp will slope up towards.
+* Place ramp in current room at cursor: This places a ramp with the cursor as the mid point inside the current room. This uses the settings you've set above.
+* Place ramp in current room from corners: This uses the current selection from the cursor tab to determine how wide, long, and high the ramp should be. Depending on where your selection points are set, it will also figure out which way the ramp should tilt. You can still override this of course.
+* New standalone ramp at cursor: Exactly the same as new standalone room at cursor. This places the ramp where your cursor is, with it's center where the cursor is, and does not parent it to the current room.
+* Place standalone ramp from corners: Same as the cursor method above, except it uses the corner selection to figure out all of its details.
 
 #### Stairs:
 
@@ -119,14 +127,12 @@ These are basically the same as ramps, except they're not smooth and have actual
 * len: The length of the stairs
 * clear: The clearance between each step and the ceiling. Must be at least a little bit higher than your character body.
 * steps (0=auto): the amount of steps to create. If set to 0, it will try to find a reasonable amount of steps so your character can walk it. If you have a specific number of steps you want this to create, you can enter them here. Note that your steps can absolutely be too tall for your character to clear, so be careful.
-* Build walls: Whether these stairs will need walls
-* Build ceiling: Whether these stairs will need a ceiling.
-* Build risers: Whether to build risers for these stairs.
-* connecting doorway:
-    * w: The width of the doorway to create if these stairs are added to any side of a room
-    * h: The height of the doorway to create if these stairs are added to any side of a room
+* Land Low: A flat bit of floor that gets added at the bottom part of the stairs, in units.
+* Land High: The same, except at the top end.
+* Build risers: Whether to build risers for these stairs. Risers are the vertical bits of geometry between each step, so nothing can fall through in the gaps.
 * Standalone stairs high end: The same as ramps. When placing a standalone stairs, which direction should they go?
-* The next couple of buttons mirror rooms and ramps exactly.
+The next couple of buttons mirror rooms and ramps exactly.
+
 
 #### Cursor
 

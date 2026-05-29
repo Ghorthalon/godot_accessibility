@@ -219,9 +219,10 @@ func _new_root_room() -> void:
 	var r := Room3D.new()
 	r.name = "Room%d" % (root.get_child_count() + 1)
 	r.size = size
-	r.position = dock.cursor
 	_apply_surface_settings(r)
-	root.add_child(r); r.owner = dock.scene_query.edited_root(); r.rebuild()
+	root.add_child(r); r.owner = dock.scene_query.edited_root()
+	r.global_position = dock.cursor
+	r.rebuild()
 	dock.current_entity = r
 	_refresh()
 	dock._say_ok("Created %s, %.1f by %.1f by %.1f meters." % [r.name, r.size.x, r.size.y, r.size.z])
@@ -243,9 +244,10 @@ func _place_room_from_corners() -> void:
 	var r := Room3D.new()
 	r.name = "Room%d" % (root.get_child_count() + 1)
 	r.size = size
-	r.position = pos
 	_apply_surface_settings(r)
-	root.add_child(r); r.owner = dock.scene_query.edited_root(); r.rebuild()
+	root.add_child(r); r.owner = dock.scene_query.edited_root()
+	r.global_position = pos
+	r.rebuild()
 	dock.current_entity = r
 	_refresh()
 	dock._say_ok("Created %s, %.1f by %.1f by %.1f meters." % [r.name, r.size.x, r.size.y, r.size.z])
@@ -258,10 +260,11 @@ func _add_neighbor(side: String) -> void:
 	if root == null: dock._say("No scene open."); return
 
 	var new_size := Vector3(new_w.value, new_h.value, new_d.value)
-	var new_pos: Vector3 = (entity as Node3D).position + entity.neighbor_offset(side, new_size)
+	var entity_pos: Vector3 = (entity as Node3D).global_position
+	var new_pos: Vector3 = entity_pos + entity.neighbor_offset(side, new_size)
 
 	# neighbor_offset returns ZERO when the side is invalid for this entity type.
-	if new_pos == (entity as Node3D).position:
+	if new_pos == entity_pos:
 		dock._say("Cannot attach a room to the %s side of %s." % [side, entity.name])
 		return
 
@@ -289,7 +292,7 @@ func _add_neighbor(side: String) -> void:
 	_apply_surface_settings(r)
 
 	root.add_child(r); r.owner = dock.scene_query.edited_root()
-	r.position = new_pos
+	r.global_position = new_pos
 	r.rebuild()   # single rebuild, config fully set, not in tree when add_doorway was called
 
 	if back_side != "":

@@ -10,6 +10,13 @@ const TTS_PITCH: float = 1.0       # 0.1-2.0
 const TTS_RATE: float = 1.0        # 0.1-10.0 (1.0 = normal)
 const TTS_INTERRUPT: bool = true   # true = new line interrupts prior speech
 
+# Panel-focus hotkeys: <modifier>+1..4 jump focus to a key panel.
+# Edit these to change the modifier (e.g. set SHIFT=false for plain Alt+number).
+const FOCUS_MOD_ALT   := true
+const FOCUS_MOD_SHIFT := true
+const FOCUS_MOD_CTRL  := false
+const FOCUS_MOD_META  := false
+
 const SND_OBJECT   := preload("res://addons/accessible_rooms/sounds/object.wav")
 const SND_INSIDE   := preload("res://addons/accessible_rooms/sounds/inside.wav")
 const SND_SUCCESS  := preload("res://addons/accessible_rooms/sounds/success.wav")
@@ -36,6 +43,10 @@ var tab_rooms   # set in _ready exposes room actions to other tabs
 var tab_stairs  # set in _ready exposes stairs actions to other tabs
 var tab_ramps   # set in _ready exposes ramp actions to other tabs
 var tab_place   # set in _ready exposes place actions to other tabs
+var tab_cursor  # set in _ready, holds the keyboard-nav widget
+var tab_scene   # set in _ready, holds the scene node list
+
+var _focus_targets: Array = []  # [{control, label}] for the panel-focus hotkeys
 
 var announce: Label
 var _snd_object:   AudioStreamPlayer
@@ -100,7 +111,7 @@ func _ready() -> void:
 	tab_stairs.dock = self
 	tabs.add_child(tab_stairs)
 
-	var tab_cursor = preload("res://addons/accessible_rooms/tab_cursor.gd").new()
+	tab_cursor = preload("res://addons/accessible_rooms/tab_cursor.gd").new()
 	tab_cursor.name = "Cursor"
 	tab_cursor.dock = self
 	tabs.add_child(tab_cursor)
@@ -115,10 +126,18 @@ func _ready() -> void:
 	tab_objects.dock = self
 	tabs.add_child(tab_objects)
 
-	var tab_scene = preload("res://addons/accessible_rooms/tab_scene.gd").new()
+	tab_scene = preload("res://addons/accessible_rooms/tab_scene.gd").new()
 	tab_scene.name = "Scene"
 	tab_scene.dock = self
 	tabs.add_child(tab_scene)
+
+	# Curated panel-focus targets for the <modifier>+1..4 hotkeys (see _shortcut_input).
+	_focus_targets = [
+		{"control": tab_cursor.nav_control,     "label": "cursor keyboard navigation"},
+		{"control": tab_rooms.room_list,        "label": "room list"},
+		{"control": tab_scene._node_list,       "label": "scene node list"},
+		{"control": tab_place.node_type_option, "label": "place node panel"},
+	]
 
 func get_target_node() -> Node3D:
 	var sel: Array = plugin.get_editor_interface().get_selection().get_selected_nodes()
@@ -132,6 +151,58 @@ func get_target_node() -> Node3D:
 func move_cursor_to(pos: Vector3) -> void:
 	cursor = pos
 	cursor_jumped.emit()
+
+# Global panel-focus hotkeys. _shortcut_input fires for the whole Rooms screen,
+# even while a SpinBox/LineEdit is focused (Alt combos aren't consumed as text).
+func _shortcut_input(event: InputEvent) -> void:
+	if not is_visible_in_tree(): return  # don't steal keys in the script/2D editor
+	if not event is InputEventKey: return
+	var key := event as InputEventKey
+	if not key.pressed or key.echo: return
+	# Shift+Space activates the focused button with Shift still held, so handlers
+	# that check Input.is_key_pressed(KEY_SHIFT) (e.g. force-place over a collision)
+	# see it. Godot's BaseButton ignores Space while a modifier is down, so the
+	# normal ui_accept never fires for keyboard users -- we trigger it ourselves.
+	if key.keycode == KEY_SPACE and key.shift_pressed \
+			and not key.alt_pressed and not key.ctrl_pressed and not key.meta_pressed:
+		var focused := get_viewport().gui_get_focus_owner()
+		if focused is BaseButton and not (focused as BaseButton).disabled:
+			get_viewport().set_input_as_handled()
+			var btn := focused as BaseButton
+			if btn.toggle_mode:
+				btn.button_pressed = not btn.button_pressed  # emits toggled
+			else:
+				btn.emit_signal("pressed")
+		return
+	if key.alt_pressed   != FOCUS_MOD_ALT:   return
+	if key.shift_pressed != FOCUS_MOD_SHIFT: return
+	if key.ctrl_pressed  != FOCUS_MOD_CTRL:  return
+	if key.meta_pressed  != FOCUS_MOD_META:  return
+	var idx := -1
+	match key.keycode:
+		KEY_1: idx = 0
+		KEY_2: idx = 1
+		KEY_3: idx = 2
+		KEY_4: idx = 3
+	if idx < 0 or idx >= _focus_targets.size(): return
+	get_viewport().set_input_as_handled()
+	_focus_panel(idx)
+
+func _focus_panel(idx: int) -> void:
+	var t: Dictionary = _focus_targets[idx]
+	var ctrl: Control = t["control"]
+	if ctrl == null or not is_instance_valid(ctrl): return
+	# The control may sit inside one or more inactive TabContainers (the outer
+	# tabs plus a tab's own nested tabs). Hidden controls can't take focus, so
+	# walk up and switch every TabContainer ancestor to reveal it first.
+	var node: Node = ctrl
+	while node != null and node != self:
+		var parent := node.get_parent()
+		if parent is TabContainer:
+			(parent as TabContainer).current_tab = node.get_index()
+		node = parent
+	ctrl.call_deferred("grab_focus")  # deferred: after the tabs reflow this frame
+	_say("Focused %s." % t["label"])
 
 func _tts_speak_native(msg: String) -> void:
 	if msg.is_empty():

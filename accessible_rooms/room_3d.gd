@@ -264,7 +264,7 @@ func entity_label() -> String:
 	return "%s (room, %.0fx%.0fx%.0f m)" % [name, size.x, size.y, size.z]
 
 func contains_point(p: Vector3) -> bool:
-	var lp := p - position
+	var lp := p - global_position
 	return absf(lp.x) <= size.x / 2.0 and lp.y >= 0 and lp.y <= size.y and absf(lp.z) <= size.z / 2.0
 
 func bounding_volume() -> float:
@@ -316,7 +316,7 @@ func boundary_faces() -> Array[Dictionary]:
 
 func _wall_face_dict(side: String) -> Dictionary:
 	var normal: Vector3 = NORMALS[side]
-	var face_center_world := position + _face_center_local(side)
+	var face_center_world := global_position + _face_center_local(side)
 	var face_width: float = size.x if side in ["north", "south"] else size.z
 	return {
 		"label": side + " wall",

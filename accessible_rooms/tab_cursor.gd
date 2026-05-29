@@ -108,7 +108,7 @@ func _move_cursor(axis: String) -> void:
 
 func _snap_to_room() -> void:
 	if dock.current_entity == null: dock._say("No current entity."); return
-	dock.cursor = (dock.current_entity as Node3D).position + Vector3(0, 1.5, 0)
+	dock.cursor = (dock.current_entity as Node3D).global_position + Vector3(0, 1.5, 0)
 	_report_cursor()
 
 func _snap_to_floor() -> void:

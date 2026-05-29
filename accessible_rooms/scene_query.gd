@@ -36,8 +36,16 @@ func entities_in_scene() -> Array[Node]:
 
 func _collect(node: Node, out: Array[Node]) -> void:
 	if node.has_meta("generated"): return
-	if node is SpatialEntity3D or node is PhysicsBody3D:
-		out.append(node); return
+	if node is PhysicsBody3D:
+		out.append(node); return  # treat a placed body as a unit, don't recurse
+	if node is SpatialEntity3D:
+		# Collect the container, but keep descending: objects placed inside a room
+		# (door scenes, props, nested stairs) must also be reachable by jump/nav.
+		# Generated walls/floor carry the "generated" meta and are skipped above.
+		out.append(node)
+		for child in node.get_children():
+			_collect(child, out)
+		return
 	for child in node.get_children():
 		_collect(child, out)
 
@@ -323,10 +331,11 @@ func first_overlap(pos: Vector3, footprint: Vector3, root: Node, exclude: Node =
 		if not child is SpatialEntity3D: continue
 		var child_fp := _entity_footprint(child as SpatialEntity3D)
 		if child_fp == Vector3.ZERO: continue
-		if not aabbs_overlap(pos, footprint, (child as Node3D).position, child_fp): continue
+		var child_pos := (child as Node3D).global_position
+		if not aabbs_overlap(pos, footprint, child_pos, child_fp): continue
 		# Full containment means no geometry can actually intersect, not a conflict.
-		if aabb_contains(pos, footprint, (child as Node3D).position, child_fp): continue
-		if aabb_contains((child as Node3D).position, child_fp, pos, footprint): continue
+		if aabb_contains(pos, footprint, child_pos, child_fp): continue
+		if aabb_contains(child_pos, child_fp, pos, footprint): continue
 		return child.name
 	return ""
 
@@ -440,7 +449,7 @@ func _doorway_world_pos(room: Room3D, side: String, cu: float, cv: float) -> Vec
 		"south": wall_center = Vector3(0, room.size.y / 2.0,  room.size.z / 2.0); bu = Vector3.RIGHT
 		"east":  wall_center = Vector3( room.size.x / 2.0, room.size.y / 2.0, 0); bu = Vector3.FORWARD
 		"west":  wall_center = Vector3(-room.size.x / 2.0, room.size.y / 2.0, 0); bu = Vector3.FORWARD
-	return room.position + wall_center + bu * cu + Vector3.UP * cv
+	return room.global_position + wall_center + bu * cu + Vector3.UP * cv
 
 ## Returns a world Transform3D for the wall point at (cu, cv) on the named side of room.
 ## Position is the wall-local point; -Z (Godot's local forward) faces into the room interior.
@@ -461,10 +470,10 @@ func wall_facing_transform(room: Room3D, side: String, cu: float, cv: float) -> 
 ## Generic helper for wall-aligned operations.
 func nearest_wall_side(room: Room3D, p: Vector3) -> String:
 	var dists := {
-		"north": absf(p.z - (room.position.z - room.size.z / 2.0)),
-		"south": absf(p.z - (room.position.z + room.size.z / 2.0)),
-		"east":  absf(p.x - (room.position.x + room.size.x / 2.0)),
-		"west":  absf(p.x - (room.position.x - room.size.x / 2.0)),
+		"north": absf(p.z - (room.global_position.z - room.size.z / 2.0)),
+		"south": absf(p.z - (room.global_position.z + room.size.z / 2.0)),
+		"east":  absf(p.x - (room.global_position.x + room.size.x / 2.0)),
+		"west":  absf(p.x - (room.global_position.x - room.size.x / 2.0)),
 	}
 	var best := "north"
 	for s in dists:
@@ -476,9 +485,9 @@ func nearest_wall_side(room: Room3D, p: Vector3) -> String:
 func wall_uv_from_world(room: Room3D, side: String, p: Vector3) -> Vector2:
 	var cu: float = 0.0
 	match side:
-		"north", "south": cu = p.x - room.position.x
-		"east", "west":   cu = room.position.z - p.z
-	var cv: float = p.y - (room.position.y + room.size.y / 2.0)
+		"north", "south": cu = p.x - room.global_position.x
+		"east", "west":   cu = room.global_position.z - p.z
+	var cv: float = p.y - (room.global_position.y + room.size.y / 2.0)
 	return Vector2(cu, cv)
 
 ## Walks node and its descendants to find the first CollisionShape3D.
@@ -621,10 +630,10 @@ func find_connections(entity: SpatialEntity3D) -> Array[ConnectionInfo]:
 ## or "" if all walls are farther than ADJACENCY_TOLERANCE (face is in the room interior).
 func _nearest_room_wall(room: Room3D, face_center_world: Vector3) -> String:
 	var checks := {
-		"north": absf(face_center_world.z - (room.position.z - room.size.z / 2.0)),
-		"south": absf(face_center_world.z - (room.position.z + room.size.z / 2.0)),
-		"east":  absf(face_center_world.x - (room.position.x + room.size.x / 2.0)),
-		"west":  absf(face_center_world.x - (room.position.x - room.size.x / 2.0)),
+		"north": absf(face_center_world.z - (room.global_position.z - room.size.z / 2.0)),
+		"south": absf(face_center_world.z - (room.global_position.z + room.size.z / 2.0)),
+		"east":  absf(face_center_world.x - (room.global_position.x + room.size.x / 2.0)),
+		"west":  absf(face_center_world.x - (room.global_position.x - room.size.x / 2.0)),
 	}
 	var best_side := ""
 	var best_dist := INF
@@ -643,12 +652,12 @@ func _wall_open_status(room: Room3D, side: String,
 	var wall_cfg := room.cfg(side)
 	if wall_cfg == null or not wall_cfg.enabled:
 		return ConnectionInfo.Status.OPEN
-	var wall_center_y: float = room.position.y + room.size.y / 2.0
+	var wall_center_y: float = room.global_position.y + room.size.y / 2.0
 	var u: float
 	var v: float = face_center_world.y - wall_center_y
 	match side:
-		"north", "south": u = face_center_world.x - room.position.x
-		"east",  "west":  u = room.position.z - face_center_world.z
+		"north", "south": u = face_center_world.x - room.global_position.x
+		"east",  "west":  u = room.global_position.z - face_center_world.z
 		_: return ConnectionInfo.Status.BLOCKED
 	var face_rect := Rect2(u - face_width / 2.0, v - face_height / 2.0, face_width, face_height)
 	for d: DoorEntry in room.door_list:

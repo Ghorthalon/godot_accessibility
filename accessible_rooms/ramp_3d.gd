@@ -192,7 +192,7 @@ func entity_label() -> String:
 		[name, width, length, height_change, high_end, slope_degrees()]
 
 func contains_point(p: Vector3) -> bool:
-	var lp := p - position
+	var lp := p - global_position
 	var dirs := _get_dirs()
 	var travel_dir: Vector3 = dirs[0]
 	var perp_dir: Vector3 = dirs[1]
@@ -246,8 +246,8 @@ func has_wall(_side: String) -> bool:
 func connection_probe_points() -> Array[Dictionary]:
 	var travel_dir: Vector3 = _get_dirs()[0]
 	var ft: float = floor_thickness
-	var low_center  := position + (-travel_dir * (length / 2.0)) + Vector3.UP * (ft + clearance / 2.0)
-	var high_center := position + ( travel_dir * (length / 2.0)) + Vector3.UP * (ft + height_change + clearance / 2.0)
+	var low_center  := global_position + (-travel_dir * (length / 2.0)) + Vector3.UP * (ft + clearance / 2.0)
+	var high_center := global_position + ( travel_dir * (length / 2.0)) + Vector3.UP * (ft + height_change + clearance / 2.0)
 	return [
 		{"label": "low end",  "normal": -travel_dir,
 		 "probe_world": low_center  + (-travel_dir) * 0.05,

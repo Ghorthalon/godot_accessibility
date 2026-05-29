@@ -177,7 +177,7 @@ func _new_standalone_stairs() -> void:
 
 	root.add_child(s)
 	s.owner = dock.scene_query.edited_root()
-	s.position = dock.cursor
+	s.global_position = dock.cursor
 	s.rebuild()
 
 	for tab in get_parent().get_children():
@@ -233,7 +233,7 @@ func _place_stairs_from_corners() -> void:
 
 	root.add_child(s)
 	s.owner = dock.scene_query.edited_root()
-	s.position = pos
+	s.global_position = pos
 	s.rebuild()
 
 	for tab in get_parent().get_children():

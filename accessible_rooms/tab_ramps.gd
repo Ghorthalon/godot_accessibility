@@ -156,7 +156,7 @@ func _new_standalone_ramp() -> void:
 
 	root.add_child(r)
 	r.owner = dock.scene_query.edited_root()
-	r.position = dock.cursor
+	r.global_position = dock.cursor
 	r.rebuild()
 
 	for tab in get_parent().get_children():
@@ -208,7 +208,7 @@ func _place_ramps_from_corners() -> void:
 
 	root.add_child(r)
 	r.owner = dock.scene_query.edited_root()
-	r.position = pos
+	r.global_position = pos
 	r.rebuild()
 
 	for tab in get_parent().get_children():

@@ -2,6 +2,8 @@
 
 accessible_rooms is a Godot addon which helps blind devs create and manage 3d scenes. It let's you place rooms, ramps, stairs, nodes, scenes and move them around. You get spoken information through your screen reader for all operations, which tell you what happened, and why. It also plays sounds depending on what you're doing. For example, while moving around using its cursor, it plays a sound at the center of any object that you're currently in, so you can immediately know exactly where you are in relation to the exact center of the entity. 
 
+And now, undo and redo also works. 
+
 ## Concepts
 
 The way this addon works is by using conceptual building blocks which let you map out your 3d world. You place these either by themselves, or within other building blocks. You can also connect them to each other directly, so you don't have to manually figure out where walls need to be split and what the height differences need to be, the addon can figure this out for you.
@@ -36,6 +38,17 @@ I will go through each part of the UI and explain what it does. By the end of th
 * Use selected node as parent: this will change the root node that the addon uses for all of its operations. For example, if you're editing a level but want all of it's nodes to go into a specific node, you would toggle this on. If you have this off, it will do all of it's operations on the root node of the current scene you have open.
 * Move cursor to selected object: If you use any of the lists inside the addon to select a different room, in any of the tabs we will get to shortly, or by moving inside the scene tree, this will automatically move the cursor to the entity you have selected, whether that's a room, ramp, or any node3d or subclass of node3d at all in the scene tree.
 
+##### Panel focus hotkeys
+
+To save you from tabbing through every control, these shortcuts jump focus straight to a key panel from anywhere in the Rooms screen. Each one switches to the right tab (and subtab) and announces where it landed:
+
+* Alt+Shift+1: Cursor keyboard navigation widget
+* Alt+Shift+2: Room list (Rooms tab)
+* Alt+Shift+3: Scene node list
+* Alt+Shift+4: Place node panel
+
+The modifier is set by the `FOCUS_MOD_*` constants at the top of `dock.gd`, so you can change it (for example to plain Alt+number) if Alt+Shift clashes with anything on your system. Note that on Windows, Alt+Shift is also the default shortcut to switch keyboard layout when you have more than one input language installed.
+
 #### Rooms tab
 
 This is where you create rooms. The rooms tab is divided into a few subtabs, as it has a lot of controls.
@@ -47,7 +60,7 @@ This is where you create rooms. The rooms tab is divided into a few subtabs, as 
 * Resize anchor:
     * NW, N, NE, E, SE, S, SW, W: When you resize a room, the room will usually be resized from it's center. This is problematic if you already have rooms connecting to other rooms, because they will be pulled away from the connecting room as they shrink inward. These anchors will let you set from which point the room will grow or shrink. For example, if you set the anchor to NE, then the northeast corner will stay exactly where it is, and the room will shrink inward, or grow outward, from the most northeastern point. Similarly, if you set this to south, then the room will grow and shrink towards the top and sides, while the southern edge remains exactly where it is.
     * Smart anchor: This will scan the room to figure out which sides are connected to sides of other surrounding spatial entities, and set the smart anchor to those. If you have something already built, this is usually what you want. This way, it will only shrink or grow the the room in the direction which does not have something on that side, while keeping the sides which do connect to something untouched.
-* Cascade: When you resize a room, this option will make sure to move every other room which is in the way as well so that the room can be resized. It will check any room which is connected to the current one, and every room connected to those, until no more rooms are connected. Then it will push everything out of the way so the resize can happen while still keeping everything connected.
+* Cascade resize: When you resize a room, this option will make sure to move every other room which is in the way as well so that the room can be resized. It will check any room which is connected to the current one, and every room connected to those, until no more rooms are connected. Then it will push everything out of the way so the resize can happen while still keeping everything connected.
 * W, H, D: If you have a room selected in the list, these 3 spin boxes will let you set the size to resize the room for. If you do not have a room selected, these boxes are disabled. 
 * Apply changes: This will actually perform the room resize
 * Measure space at cursor: This will scan the surrounding geometry and tell you how much free space you have in any direction.
@@ -57,9 +70,10 @@ This is where you create rooms. The rooms tab is divided into a few subtabs, as 
     * x: The x coordinate to move the currently selected room to. This will make sure that walls still line up and openings between rooms are kept in tact.
     * y: The y coordinate to move the selected room to.
     * z: The z coordinate to move the current room to.
-    * Cascade: When moving rooms, moves all other connected rooms with it so your geometry stays in tact. Good for moving an entire section of map.
+    * Cascade move: When moving rooms, moves all other connected rooms with it so your geometry stays in tact. Good for moving an entire section of map. Note that this and "cascade resize" are two separate settings, and both are sticky: whenever you select a room, the addon announces the current resize anchor and whether either cascade is on, so a setting you turned on an hour ago cannot surprise you.
+    * Preview cascade (no changes): Tells you how many rooms a cascade move would drag along, and names them, without touching anything. Use this before a big move if you want to know the blast radius first.
     * set from cursor: Sets the x, y, and z values to where your cursor is.
-    * apply move: Applies the move. If any connections would be broken, it tells you. HOld shift to force the move anyway and break them.
+    * apply move: Applies the move. If the move would overlap something or break a doorway connection, it names the specific doorways that would be destroyed and asks you to confirm before doing it. Openings pushed off the end of a wall are discarded rather than clamped, which is why it asks. Whatever you confirm, Control+Z undoes it.
 * w: The width of the room to create
 * h: the height of the room to create
 * d: the depth of the room to create
@@ -100,7 +114,7 @@ This is where you create rooms. The rooms tab is divided into a few subtabs, as 
 
 ##### Bake subtab
 
-* Bake scene: this takes all of the addon created rooms, ramps, and other geometry, and compiles it into plain Godot nodes instead. It also merges the geometry into single meshes where possible, while keeping any custom data you might have entered for surfaces and so on. This will improve performance a lot especially for larger worlds. This also allows you to place scripts and such on your room geometry yourself, as before all of this would be taken up by the addon's scripts instead and you would need to subclass from the addon's authoring scripts. There are two buttons. One of them will replace your current scene, so it will delete the nodes within it and replace them with the baked versions. The other one will bake it to a new scene. This is recommended. I usually have a dev scene which I exclude from being shipped, which is where I do all my editing. I then save it to a world baked scene when it's time to ship or I'm actually done with the environment. I always keep them around however in case I need to make edits.
+* Bake scene: this takes all of the addon created rooms, ramps, and other geometry, and compiles it into plain Godot nodes instead. It also merges the geometry into single meshes where possible, while keeping any custom data you might have entered for surfaces and so on. This will improve performance a lot especially for larger worlds. This also allows you to place scripts and such on your room geometry yourself, as before all of this would be taken up by the addon's scripts instead and you would need to subclass from the addon's authoring scripts. There are two buttons. One of them will replace your current scene, so it will delete the editable rooms within it and replace them with the baked versions. It asks you to confirm first, naming how many entities it is about to replace, and it is undoable with Control+Z if you change your mind. The other one will bake it to a new scene and leaves the scene you are editing completely alone. This is still the one I recommend. I usually have a dev scene which I exclude from being shipped, which is where I do all my editing. I then save it to a world baked scene when it's time to ship or I'm actually done with the environment. I always keep them around however in case I need to make edits.
 
 #### Ramps:
 
@@ -222,6 +236,7 @@ This tab allows you to move objects in a physics aware manner.
 #### Scene
 
 This is a list of all of the nodes in the current scene in a list sorted by distance from the cursor. If the list is empty but your scene actually contains items, press refresh and they will show up. Each entry in the list will tell you the object's position, dimensions, whether it is a child node of any parent node all the way up the chain, and if it is currently inside any room. It will also play a sound at the object's position, and select it if the relevant global option to select nodes when moving is enabled. This will also make it immediately editable inside the inspector.
+
 
 ## Status:
 

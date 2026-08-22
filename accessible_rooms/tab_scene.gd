@@ -63,7 +63,7 @@ func _label_for(n: Node3D) -> String:
 		ancestors.push_front(cur.name)
 		cur = cur.get_parent()
 
-	var containing: SpatialEntity3D = dock.scene_query.entity_containing(p)
+	var containing: SpatialEntity3D = dock.scene_query.innermost_entity_containing(p)
 
 	var parts: Array[String] = []
 	parts.append("%s: %s (%.1fm)" % [n.name, pos_str, dist])
@@ -84,12 +84,30 @@ func _on_select(index: int) -> void:
 		dock.play_audio_3d("object", (node as Node3D).global_position)
 
 func _on_editor_selection_changed() -> void:
-	if not dock.follow_selection: return
 	var sel: Array = dock.plugin.get_editor_interface().get_selection().get_selected_nodes()
+	# Retargeting is NOT gated on follow_selection: that option is about moving
+	# the cursor. Selecting a room anywhere in the editor must always retarget
+	# the addon, or "punch doorway on current" acts on a room the user stopped
+	# thinking about long ago.
+	for node in sel:
+		var entity := _owning_entity(node)
+		if entity != null:
+			dock.tab_rooms.sync_to_entity(entity)
+			break
+	if not dock.follow_selection: return
 	for node in sel:
 		if node is Node3D:
 			dock.move_cursor_to((node as Node3D).global_position)
 			return
+
+## Walks up from node to the SpatialEntity3D that owns it, so selecting a
+## generated wall or a prop placed inside a room still retargets to that room.
+func _owning_entity(node: Node) -> SpatialEntity3D:
+	var n := node
+	while n != null:
+		if n is SpatialEntity3D: return n as SpatialEntity3D
+		n = n.get_parent()
+	return null
 
 func _exit_tree() -> void:
 	var sel: EditorSelection = dock.plugin.get_editor_interface().get_selection()

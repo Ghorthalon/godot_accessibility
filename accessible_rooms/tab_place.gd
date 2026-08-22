@@ -18,9 +18,7 @@ var _phys_depth: SpinBox
 
 var auto_parent_to_room: bool = false
 
-var _conflict_bar: HBoxContainer
-var _conflict_label: Label
-var _pending_placement: Dictionary = {}
+var confirm: ConfirmBar
 
 func _ready() -> void:
 	var room_toggle := CheckButton.new()
@@ -61,19 +59,9 @@ func _ready() -> void:
 	_btn("Insert scene at nearest doorway", _insert_scene_at_nearest_doorway)
 	_btn("Insert scene aligned to nearest wall", _insert_scene_aligned_to_wall)
 
-	_conflict_bar = HBoxContainer.new()
-	_conflict_bar.visible = false
-	_conflict_label = Label.new()
-	_conflict_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_conflict_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_conflict_bar.add_child(_conflict_label)
-	var place_at_btn := Button.new(); place_at_btn.text = "Place at suggested"
-	place_at_btn.pressed.connect(_on_place_confirm)
-	var cancel_place_btn := Button.new(); cancel_place_btn.text = "Cancel"
-	cancel_place_btn.pressed.connect(_on_place_cancel)
-	_conflict_bar.add_child(place_at_btn)
-	_conflict_bar.add_child(cancel_place_btn)
-	add_child(_conflict_bar)
+	confirm = ConfirmBar.new()
+	confirm.dock = dock
+	add_child(confirm)
 
 	add_child(HSeparator.new())
 	var po_lbl := Label.new(); po_lbl.text = "Insert sized body / area:"
@@ -184,11 +172,9 @@ func _insert_node_at_cursor() -> void:
 	if obj == null: dock._say("Could not create %s." % type_name); return
 	var n := obj as Node
 	n.name = "%s%d" % [type_name, parent.get_child_count() + 1]
-	parent.add_child(n); n.owner = owner_node
-	if n is Node3D:
-		(n as Node3D).global_position = dock.cursor
+	dock.ops.add_node(parent, n, "Insert %s" % n.name, dock.cursor if n is Node3D else null)
 	dock.last_placed_node = n as Node3D
-	dock._say("Inserted %s at %.1f %.1f %.1f." % [n.name, dock.cursor.x, dock.cursor.y, dock.cursor.z])
+	dock._say_ok("Inserted %s at %.1f %.1f %.1f. Press Control Z to undo." % [n.name, dock.cursor.x, dock.cursor.y, dock.cursor.z])
 
 func _insert_scene_at_cursor() -> void:
 	var packed := _load_scene_from_path()
@@ -221,7 +207,7 @@ func _insert_scene_at_nearest_doorway() -> void:
 func _insert_scene_aligned_to_wall() -> void:
 	var packed := _load_scene_from_path()
 	if packed == null: return
-	var room := dock.scene_query.entity_containing(dock.cursor) as Room3D
+	var room := dock.scene_query.innermost_entity_containing(dock.cursor) as Room3D
 	if room == null: dock._say("Cursor is not inside a room."); return
 	var side: String = dock.scene_query.nearest_wall_side(room, dock.cursor)
 	var uv: Vector2 = dock.scene_query.wall_uv_from_world(room, side, dock.cursor)
@@ -230,19 +216,18 @@ func _insert_scene_aligned_to_wall() -> void:
 
 ## Instantiates packed under parent at tf, with these collision behaviors:
 ##   - no collision: place normally.
-##   - colliding + Shift held: place anyway with a warning.
-##   - colliding + no Shift: search for the nearest fit, hold the placement in
-##     pending state, show the confirm bar so you can accept or cancel.
-##   - colliding + no fit found: refuse + error.
+##   - colliding, a clear spot found nearby: offer that spot on the confirm bar.
+##   - colliding, nothing clear within 5m: offer to place anyway, in place.
+## Nothing is ever inserted without either a clear spot or an explicit Proceed.
 ## Probes collision on an un-parented instance, then re-instantiates fresh
 ## on commit, so a refused/cancelled scene never appears in the tree.
 func instantiate_aligned(packed: PackedScene, tf: Transform3D, parent: Node, where: String) -> void:
 	var owner_node: Node = dock.scene_query.edited_root()
 	var probe := packed.instantiate()
 	if not probe is Node3D:
-		parent.add_child(probe)
-		probe.owner = owner_node
-		dock._say("Inserted %s at %s (no Node3D root, transform skipped)." % [probe.name, where])
+		# No spatial root, so there is nothing to collision-check or orient.
+		dock.ops.add_node(parent, probe, "Insert %s" % probe.name)
+		dock._say_ok("Inserted %s at %s (no Node3D root, transform skipped). Press Control Z to undo." % [probe.name, where])
 		return
 	var n3d := probe as Node3D
 	n3d.transform.basis = tf.basis  # orient probe shape before the collision query
@@ -252,49 +237,26 @@ func instantiate_aligned(packed: PackedScene, tf: Transform3D, parent: Node, whe
 		probe.queue_free()
 		_commit_place(packed, tf, parent, owner_node, where)
 		return
-	if Input.is_key_pressed(KEY_SHIFT):
-		probe.queue_free()
-		dock._say("Warning: overlaps %s, placing anyway (Shift held)." % result["collider_name"])
-		_commit_place(packed, tf, parent, owner_node, where)
-		return
 	var suggested = dock.scene_query.find_fit_position(n3d, tf.origin, 5.0)
 	probe.queue_free()
-	if suggested == null:
-		dock._say_err("Cannot place at %s: blocked by %s and no clear spot found within 5m. Hold Shift to force." % [where, result["collider_name"]])
-		return
-	var delta: Vector3 = (suggested as Vector3) - tf.origin
-	_pending_placement = {
-		"packed": packed, "tf": Transform3D(tf.basis, suggested as Vector3),
-		"parent": parent, "owner": owner_node,
-		"where": where, "delta": delta,
-	}
 	var name_part: String = packed.resource_path.get_file() if packed.resource_path != "" else "scene"
-	var offset_str: String = SceneQuery.describe_offset(delta)
-	_conflict_label.text = "%s would collide with %s. Suggested: %s." % [name_part, result["collider_name"], offset_str]
-	_conflict_bar.visible = true
-	dock._say("%s would collide with %s. Suggested spot is %s. Confirm or cancel." % [name_part, result["collider_name"], offset_str])
+	if suggested == null:
+		confirm.ask("%s would collide with %s at %s, and no clear spot was found within 5m." % [name_part, result["collider_name"], where],
+				"Place anyway",
+				func(): _commit_place(packed, tf, parent, owner_node, "%s (overlapping %s)" % [where, result["collider_name"]]))
+		return
+	var suggested_tf := Transform3D(tf.basis, suggested as Vector3)
+	var offset_str: String = SceneQuery.describe_offset((suggested as Vector3) - tf.origin)
+	confirm.ask("%s would collide with %s. There is a clear spot %s." % [name_part, result["collider_name"], offset_str],
+			"Place at clear spot",
+			func(): _commit_place(packed, suggested_tf, parent, owner_node, "%s (auto-moved %s)" % [where, offset_str]))
 
 func _commit_place(packed: PackedScene, tf: Transform3D, parent: Node, owner_node: Node, where: String) -> void:
 	var instance := packed.instantiate()
-	parent.add_child(instance)
+	dock.ops.add_node(parent, instance, "Insert %s" % instance.name, tf if instance is Node3D else null)
 	if instance is Node3D:
-		(instance as Node3D).global_transform = tf
 		dock.last_placed_node = instance as Node3D
-	instance.owner = owner_node
-	dock._say_ok("Inserted %s at %s." % [instance.name, where])
-
-func _on_place_confirm() -> void:
-	if _pending_placement.is_empty(): return
-	var p := _pending_placement
-	_pending_placement = {}
-	_conflict_bar.visible = false
-	var where_str: String = "%s (auto-moved %s)" % [p["where"], SceneQuery.describe_offset(p["delta"])]
-	_commit_place(p["packed"], p["tf"], p["parent"], p["owner"], where_str)
-
-func _on_place_cancel() -> void:
-	_pending_placement = {}
-	_conflict_bar.visible = false
-	dock._say("Placement cancelled.")
+	dock._say_ok("Inserted %s at %s. Press Control Z to undo." % [instance.name, where])
 
 # --- Floor zones ---
 
@@ -302,22 +264,39 @@ func _add_floor_zone() -> void:
 	if not dock.current_entity is Room3D: dock._say("No room selected."); return
 	var room := dock.current_entity as Room3D
 	var world_rect: Rect2 = dock.corner_selector.get_rect2_xz()
-	var rect := Rect2(world_rect.position - Vector2(room.position.x, room.position.z), world_rect.size)
+	var rect := Rect2(world_rect.position.x - room.global_position.x,
+		room.global_position.z - world_rect.end.y, world_rect.size.x, world_rect.size.y)
 	if rect.size.x < 0.01 or rect.size.y < 0.01:
 		dock._say("Zone too small, move cursor between corners first."); return
 	var surface := zone_surface_edit.text.strip_edges()
 	if surface.is_empty(): dock._say("Enter a surface name first."); return
-	room.cfg("floor").zones.append({"rect": rect, "surface": surface})
-	room._queue_rebuild()
-	dock._say("Added %s zone (%.1f x %.1f m) to floor of %s." % \
-		[surface, rect.size.x, rect.size.y, room.name])
+	var wc: WallConfig = room.cfg("floor")
+	var after: Array[Dictionary] = wc.zones.duplicate(true)
+	after.append({"rect": rect, "surface": surface})
+	dock.ops.begin("Add %s zone to floor of %s" % [surface, room.name])
+	dock.ops.prop(wc, "zones", after)
+	dock.ops.refresh(room, "_queue_rebuild")
+	dock.ops.commit()
+	dock._say_ok("Added %s zone (%.1f x %.1f m) to floor of %s. Press Control Z to undo." % [surface, rect.size.x, rect.size.y, room.name])
 
 func _clear_floor_zones() -> void:
 	if not dock.current_entity is Room3D: dock._say("No room selected."); return
 	var room := dock.current_entity as Room3D
-	room.cfg("floor").zones.clear()
-	room._queue_rebuild()
-	dock._say("Cleared all floor zones from %s." % room.name)
+	var wc: WallConfig = room.cfg("floor")
+	if wc.zones.is_empty():
+		dock._say("%s has no floor zones to clear." % room.name); return
+	# A bulk delete of work that took many placements to build: always ask.
+	confirm.ask("Clear all %d floor zone%s from %s?" % [wc.zones.size(), "s" if wc.zones.size() != 1 else "", room.name],
+			"Clear all zones", func(): _do_clear_floor_zones(room, wc))
+
+func _do_clear_floor_zones(room: Room3D, wc: WallConfig) -> void:
+	var count := wc.zones.size()
+	var empty: Array[Dictionary] = []
+	dock.ops.begin("Clear floor zones from %s" % room.name)
+	dock.ops.prop(wc, "zones", empty)
+	dock.ops.refresh(room, "_queue_rebuild")
+	dock.ops.commit()
+	dock._say_ok("Cleared %d floor zone%s from %s. Press Control Z to undo." % [count, "s" if count != 1 else "", room.name])
 
 # --- Snap helpers ---
 
@@ -326,8 +305,9 @@ func _nudge_to_floor() -> void:
 	if n == null: return
 	var floor_y = dock.scene_query.raycast_down(n.global_position)
 	if floor_y == null: dock._say("No floor found below node."); return
-	n.global_position.y = floor_y + _floor_offset.value
-	dock._say("Nudged %s to floor (y=%.2f)." % [n.name, n.global_position.y])
+	var target := Vector3(n.global_position.x, floor_y + _floor_offset.value, n.global_position.z)
+	dock.ops.set_prop(n, "global_position", target, "Nudge %s to floor" % n.name)
+	dock._say_ok("Nudged %s to floor (y=%.2f). Press Control Z to undo." % [n.name, target.y])
 
 func _snap_to_nearest_wall() -> void:
 	var n: Node3D = dock.get_target_node()
@@ -346,24 +326,29 @@ func _snap_to_nearest_wall() -> void:
 			best_dist = d; best_hit = hit; best_dir = dirs[side]; best_side = side
 	if best_side == "":
 		dock._say("No wall found in any direction."); return
-	n.global_position = best_hit - best_dir * _wall_offset.value
-	dock._say("Snapped %s to %s wall (%.1fm away)." % [n.name, best_side, best_dist])
+	dock.ops.set_prop(n, "global_position", best_hit - best_dir * _wall_offset.value,
+			"Snap %s to %s wall" % [n.name, best_side])
+	dock._say_ok("Snapped %s to %s wall (%.1fm away). Press Control Z to undo." % [n.name, best_side, best_dist])
 
 func _center_east_west() -> void:
 	var n: Node3D = dock.get_target_node()
 	if n == null: return
 	var gap: Dictionary = dock.scene_query.wall_gap(n.global_position, Vector3.RIGHT)
 	if gap.is_empty(): dock._say("Could not find walls on both east and west sides."); return
-	n.global_position.x = (gap["midpoint"] as Vector3).x
-	dock._say("Centered %s east-west (gap %.1fm)." % [n.name, gap["gap"]])
+	var target := n.global_position
+	target.x = (gap["midpoint"] as Vector3).x
+	dock.ops.set_prop(n, "global_position", target, "Centre %s east-west" % n.name)
+	dock._say_ok("Centered %s east-west (gap %.1fm). Press Control Z to undo." % [n.name, gap["gap"]])
 
 func _center_north_south() -> void:
 	var n: Node3D = dock.get_target_node()
 	if n == null: return
 	var gap: Dictionary = dock.scene_query.wall_gap(n.global_position, Vector3.BACK)
 	if gap.is_empty(): dock._say("Could not find walls on both north and south sides."); return
-	n.global_position.z = (gap["midpoint"] as Vector3).z
-	dock._say("Centered %s north-south (gap %.1fm)." % [n.name, gap["gap"]])
+	var target := n.global_position
+	target.z = (gap["midpoint"] as Vector3).z
+	dock.ops.set_prop(n, "global_position", target, "Centre %s north-south" % n.name)
+	dock._say_ok("Centered %s north-south (gap %.1fm). Press Control Z to undo." % [n.name, gap["gap"]])
 
 func _snap_to_nearest_doorway() -> void:
 	var n: Node3D = dock.get_target_node()
@@ -375,8 +360,9 @@ func _snap_to_nearest_doorway() -> void:
 	var inward_normals := {"north": Vector3.BACK, "south": Vector3.FORWARD,
 						   "east": Vector3.LEFT, "west": Vector3.RIGHT}
 	var inward: Vector3 = inward_normals.get(info["side"], Vector3.ZERO)
-	n.global_position = wpos + inward * _door_inset.value
-	dock._say("Snapped %s to %s doorway (%.1fm × %.1fm)." % [n.name, info["side"], info["width"], info["height"]])
+	dock.ops.set_prop(n, "global_position", wpos + inward * _door_inset.value,
+			"Snap %s to %s doorway" % [n.name, info["side"]])
+	dock._say_ok("Snapped %s to %s doorway (%.1fm by %.1fm). Press Control Z to undo." % [n.name, info["side"], info["width"], info["height"]])
 
 func _measure_space() -> void:
 	var n: Node3D = dock.get_target_node()
@@ -400,10 +386,11 @@ func _insert_physical_object() -> void:
 	if type_name != "Area3D":
 		var reason := _fit_check(dock.cursor, size)
 		if reason != "":
-			if Input.is_key_pressed(KEY_SHIFT):
-				dock._say("Warning: %s does not fit (%s), placing anyway (Shift held)." % [type_name, reason])
-			else:
-				dock._say("%s (%.1f x %.1f x %.1f m) does not fit: %s. Hold Shift to force." % [type_name, size.x, size.y, size.z, reason]); return
+			var pos: Vector3 = dock.cursor
+			confirm.ask("%s (%.1f by %.1f by %.1f m) does not fit at the cursor: %s." % [type_name, size.x, size.y, size.z, reason],
+					"Create anyway",
+					func(): _create_physical_object(parent, dock.scene_query.edited_root(), pos, size))
+			return
 	_create_physical_object(parent, dock.scene_query.edited_root(), dock.cursor, size)
 
 func _insert_physical_object_from_selection() -> void:
@@ -417,10 +404,11 @@ func _insert_physical_object_from_selection() -> void:
 	if type_name != "Area3D":
 		var reason := _fit_check(pos, aabb.size)
 		if reason != "":
-			if Input.is_key_pressed(KEY_SHIFT):
-				dock._say("Warning: %s does not fit (%s), placing anyway (Shift held)." % [type_name, reason])
-			else:
-				dock._say("%s (%.1f x %.1f x %.1f m) does not fit: %s. Hold Shift to force." % [type_name, aabb.size.x, aabb.size.y, aabb.size.z, reason]); return
+			var sz: Vector3 = aabb.size
+			confirm.ask("%s (%.1f by %.1f by %.1f m) does not fit in the selection: %s." % [type_name, sz.x, sz.y, sz.z, reason],
+					"Create anyway",
+					func(): _create_physical_object(parent, dock.scene_query.edited_root(), pos, sz))
+			return
 	_create_physical_object(parent, dock.scene_query.edited_root(), pos, aabb.size)
 
 func _fit_check(pos: Vector3, size: Vector3) -> String:
@@ -452,10 +440,6 @@ func _create_physical_object(parent: Node, owner_node: Node, pos: Vector3, size:
 		mi.mesh = box_mesh
 		mi.position = Vector3(0.0, size.y / 2.0, 0.0)
 		body.add_child(mi)
-	parent.add_child(body)
-	body.global_position = pos
-	body.owner = owner_node; cs.owner = owner_node
-	if mi != null: mi.owner = owner_node
+	dock.ops.add_node(parent, body, "Create %s" % body.name, pos)
 	dock.last_placed_node = body
-	dock._say("Created %s (%.1f x %.1f x %.1f m) at %.1f %.1f %.1f." % \
-		[type_name, size.x, size.y, size.z, pos.x, pos.y, pos.z])
+	dock._say_ok("Created %s (%.1f by %.1f by %.1f m) at %.1f %.1f %.1f. Press Control Z to undo." % [type_name, size.x, size.y, size.z, pos.x, pos.y, pos.z])

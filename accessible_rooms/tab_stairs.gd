@@ -2,6 +2,7 @@
 extends VBoxContainer
 
 var dock  # reference to parent dock (dock.gd)
+var confirm: ConfirmBar
 
 var stair_w: SpinBox
 var stair_hc: SpinBox
@@ -78,6 +79,10 @@ func _ready() -> void:
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(hint)
 
+	confirm = ConfirmBar.new()
+	confirm.dock = dock
+	add_child(confirm)
+
 func _build_stair_node() -> Stairs3D:
 	var s := Stairs3D.new()
 	s.width         = stair_w.value
@@ -98,10 +103,7 @@ func _place_in_room_at_cursor() -> void:
 	var s := _build_stair_node()
 	s.floor_thickness = room.wall_floor.thickness if room.wall_floor else 0.0
 	s.name = "%s_stairs%d" % [room.name, room.get_child_count() + 1]
-	room.add_child(s)
-	s.owner = dock.scene_query.edited_root()
-	s.position = room.to_local(dock.cursor)
-	s.rebuild()
+	dock.ops.add_node(room, s, "Place stairs %s in %s" % [s.name, room.name], dock.cursor)
 	for tab in get_parent().get_children():
 		if tab.has_method("_refresh"): tab._refresh()
 	var n := s._effective_step_count()
@@ -141,10 +143,7 @@ func _place_in_room_from_corners() -> void:
 		aabb.position.x + aabb.size.x / 2.0,
 		aabb.position.y,
 		aabb.position.z + aabb.size.z / 2.0)
-	room.add_child(s)
-	s.owner = dock.scene_query.edited_root()
-	s.position = room.to_local(world_pos)
-	s.rebuild()
+	dock.ops.add_node(room, s, "Place stairs %s in %s" % [s.name, room.name], world_pos)
 
 	for tab in get_parent().get_children():
 		if tab.has_method("_refresh"): tab._refresh()
@@ -168,28 +167,28 @@ func _new_standalone_stairs() -> void:
 		"north", "south": footprint = Vector3(s.width, s.height_change + s.clearance, s.length)
 		"east",  "west":  footprint = Vector3(s.length, s.height_change + s.clearance, s.width)
 
-	var conflict: String = dock.scene_query.first_overlap(dock.cursor, footprint, root)
-	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
-		dock._say("Cannot place staircase: overlaps with %s. Move cursor clear first, or hold Shift to force." % conflict)
+	var pos: Vector3 = dock.cursor
+	var conflict: String = dock.scene_query.first_overlap(pos, footprint)
+	if conflict != "":
+		confirm.ask("A staircase at the cursor would overlap %s." % conflict, "Place anyway",
+				func(): _commit_standalone_stairs(root, s, pos, "at cursor", conflict))
 		return
-	elif conflict != "":
-		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
+	_commit_standalone_stairs(root, s, pos, "at cursor", "")
 
-	root.add_child(s)
-	s.owner = dock.scene_query.edited_root()
-	s.global_position = dock.cursor
-	s.rebuild()
+## Shared tail for both standalone placements, so the confirmed path and the
+## unobstructed path insert and announce identically.
+func _commit_standalone_stairs(root: Node, s: Stairs3D, pos: Vector3,
+		where: String, conflict: String) -> void:
+	dock.ops.add_node(root, s, "Place stairs %s" % s.name, pos)
 
 	for tab in get_parent().get_children():
 		if tab.has_method("_refresh"): tab._refresh()
 
 	var n := s._effective_step_count()
-	dock._say(("Placed standalone staircase at cursor, high end %s. " +
-		"%d steps, %.0fcm rise / %.0fcm deep each. " +
-		"Rises %.1fm over %.1fm (%.0f deg).") % \
-		[s.high_end, n,
-		 s.step_height() * 100.0, s.step_depth() * 100.0,
-		 s.height_change, s.length, s.slope_degrees()])
+	var msg := "Placed standalone staircase %s, high end %s. %d steps, %.0fcm rise / %.0fcm deep each. Rises %.1fm over %.1fm (%.0f deg)." % [where, s.high_end, n, s.step_height() * 100.0, s.step_depth() * 100.0, s.height_change, s.length, s.slope_degrees()]
+	if conflict != "": msg += " Note: it overlaps %s." % conflict
+	msg += " Press Control Z to undo."
+	dock._say_ok(msg)
 
 func _place_stairs_from_corners() -> void:
 	var root: Node = dock.scene_query.placement_parent()
@@ -224,28 +223,12 @@ func _place_stairs_from_corners() -> void:
 		aabb.position.y,
 		aabb.position.z + aabb.size.z / 2.0)
 
-	var conflict: String = dock.scene_query.first_overlap(pos, footprint, root)
-	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
-		dock._say("Cannot place staircase: overlaps with %s. Hold Shift to force." % conflict)
+	var conflict: String = dock.scene_query.first_overlap(pos, footprint)
+	if conflict != "":
+		confirm.ask("A staircase from corners would overlap %s." % conflict, "Place anyway",
+				func(): _commit_standalone_stairs(root, s, pos, "from corners", conflict))
 		return
-	elif conflict != "":
-		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
-
-	root.add_child(s)
-	s.owner = dock.scene_query.edited_root()
-	s.global_position = pos
-	s.rebuild()
-
-	for tab in get_parent().get_children():
-		if tab.has_method("_refresh"): tab._refresh()
-
-	var n := s._effective_step_count()
-	dock._say(("Placed staircase from corners, high end %s. " +
-		"%d steps, %.0fcm rise / %.0fcm deep each. " +
-		"Rises %.1fm over %.1fm (%.0f deg).") % \
-		[s.high_end, n,
-		 s.step_height() * 100.0, s.step_depth() * 100.0,
-		 s.height_change, s.length, s.slope_degrees()])
+	_commit_standalone_stairs(root, s, pos, "from corners", "")
 
 func _spinbox(min_v: float, max_v: float, step_v: float, default_v: float) -> SpinBox:
 	var s := SpinBox.new()

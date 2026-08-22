@@ -2,6 +2,7 @@
 extends VBoxContainer
 
 var dock  # reference to parent dock (dock.gd)
+var confirm: ConfirmBar
 
 var _nudge_dist: SpinBox
 var _floor_offset: SpinBox
@@ -96,6 +97,10 @@ func _ready() -> void:
 	door_row.add_child(door_lbl); door_row.add_child(_door_inset)
 	add_child(door_row)
 
+	confirm = ConfirmBar.new()
+	confirm.dock = dock
+	add_child(confirm)
+
 # --- Object info ---
 
 func _report_position() -> void:
@@ -128,15 +133,25 @@ func _check_cursor() -> void:
 func _move_to_cursor() -> void:
 	var n: Node3D = dock.get_target_node()
 	if n == null: return
-	var result: Dictionary = dock.scene_query.check_placement(n, dock.cursor)
+	var target: Vector3 = dock.cursor
+	var result: Dictionary = dock.scene_query.check_placement(n, target)
 	if result["collider_name"] == "no shape":
-		n.global_position = dock.cursor
-		dock._say_ok("Moved %s to cursor (no collision shape to check)." % n.name)
+		_commit_object_move(n, target, "Move %s to cursor" % n.name,
+				"Moved %s to cursor (no collision shape to check)." % n.name)
 	elif result["collides"]:
-		dock._say_err("Cannot move %s, blocked by %s." % [n.name, result["collider_name"]])
+		confirm.ask("Moving %s to the cursor would lodge it in %s." % [n.name, result["collider_name"]],
+				"Move anyway",
+				func(): _commit_object_move(n, target, "Move %s to cursor" % n.name,
+						"Moved %s to cursor, overlapping %s." % [n.name, result["collider_name"]]))
 	else:
-		n.global_position = dock.cursor
-		dock._say_ok("Moved %s to cursor at %.2f, %.2f, %.2f." % [n.name, dock.cursor.x, dock.cursor.y, dock.cursor.z])
+		_commit_object_move(n, target, "Move %s to cursor" % n.name,
+				"Moved %s to cursor at %.2f, %.2f, %.2f." % [n.name, target.x, target.y, target.z])
+
+## Single undoable position change plus its announcement. Every object move in
+## this tab goes through here so none of them can skip the undo stack.
+func _commit_object_move(n: Node3D, target: Vector3, action_name: String, message: String) -> void:
+	dock.ops.set_prop(n, "global_position", target, action_name)
+	dock._say_ok("%s Press Control Z to undo." % message)
 
 # --- Nudge ---
 
@@ -147,14 +162,17 @@ func _nudge(dir: Vector3) -> void:
 	var target: Vector3 = n.global_position + dir * amount
 	var result: Dictionary = dock.scene_query.check_placement(n, target)
 	var dir_name := _dir_name(dir)
+	var action := "Nudge %s %s" % [n.name, dir_name]
 	if result["collider_name"] == "no shape":
-		n.global_position = target
-		dock._say_ok("Nudged %s %s %.2fm (no collision shape to check)." % [n.name, dir_name, amount])
+		_commit_object_move(n, target, action,
+				"Nudged %s %s %.2fm (no collision shape to check)." % [n.name, dir_name, amount])
 	elif result["collides"]:
-		dock._say_err("Cannot nudge %s %s, blocked by %s." % [n.name, dir_name, result["collider_name"]])
+		confirm.ask("Nudging %s %s would lodge it in %s." % [n.name, dir_name, result["collider_name"]],
+				"Nudge anyway",
+				func(): _commit_object_move(n, target, action,
+						"Nudged %s %s %.2fm, overlapping %s." % [n.name, dir_name, amount, result["collider_name"]]))
 	else:
-		n.global_position = target
-		dock._say_ok("Nudged %s %s %.2fm." % [n.name, dir_name, amount])
+		_commit_object_move(n, target, action, "Nudged %s %s %.2fm." % [n.name, dir_name, amount])
 
 func _dir_name(dir: Vector3) -> String:
 	if dir == Vector3.FORWARD: return "north"
@@ -176,8 +194,10 @@ func _snap_to_floor() -> void:
 	var origin_above_bottom := 0.0
 	if shape_node != null and shape_node.shape is BoxShape3D:
 		origin_above_bottom = (shape_node.shape as BoxShape3D).size.y / 2.0 - shape_node.position.y
-	n.global_position.y = floor_y + origin_above_bottom + _floor_offset.value
-	dock._say("Snapped %s to floor (y=%.2f)." % [n.name, n.global_position.y])
+	var target := n.global_position
+	target.y = floor_y + origin_above_bottom + _floor_offset.value
+	_commit_object_move(n, target, "Snap %s to floor" % n.name,
+			"Snapped %s to floor (y=%.2f)." % [n.name, target.y])
 
 func _snap_to_nearest_wall() -> void:
 	var n: Node3D = dock.get_target_node()
@@ -202,24 +222,29 @@ func _snap_to_nearest_wall() -> void:
 		var sz: Vector3 = (shape_node.shape as BoxShape3D).size
 		var abs_dir := Vector3(absf(best_dir.x), absf(best_dir.y), absf(best_dir.z))
 		origin_to_face = sz.dot(abs_dir) / 2.0 + shape_node.position.dot(best_dir)
-	n.global_position = best_hit - best_dir * (origin_to_face + _wall_offset.value)
-	dock._say("Snapped %s to %s wall (%.1fm away)." % [n.name, best_side, best_dist])
+	_commit_object_move(n, best_hit - best_dir * (origin_to_face + _wall_offset.value),
+			"Snap %s to %s wall" % [n.name, best_side],
+			"Snapped %s to %s wall (%.1fm away)." % [n.name, best_side, best_dist])
 
 func _center_east_west() -> void:
 	var n: Node3D = dock.get_target_node()
 	if n == null: return
 	var gap: Dictionary = dock.scene_query.wall_gap(n.global_position, Vector3.RIGHT)
 	if gap.is_empty(): dock._say("Could not find walls on both east and west sides."); return
-	n.global_position.x = (gap["midpoint"] as Vector3).x
-	dock._say("Centered %s east-west (gap %.1fm)." % [n.name, gap["gap"]])
+	var target := n.global_position
+	target.x = (gap["midpoint"] as Vector3).x
+	_commit_object_move(n, target, "Centre %s east-west" % n.name,
+			"Centered %s east-west (gap %.1fm)." % [n.name, gap["gap"]])
 
 func _center_north_south() -> void:
 	var n: Node3D = dock.get_target_node()
 	if n == null: return
 	var gap: Dictionary = dock.scene_query.wall_gap(n.global_position, Vector3.BACK)
 	if gap.is_empty(): dock._say("Could not find walls on both north and south sides."); return
-	n.global_position.z = (gap["midpoint"] as Vector3).z
-	dock._say("Centered %s north-south (gap %.1fm)." % [n.name, gap["gap"]])
+	var target := n.global_position
+	target.z = (gap["midpoint"] as Vector3).z
+	_commit_object_move(n, target, "Centre %s north-south" % n.name,
+			"Centered %s north-south (gap %.1fm)." % [n.name, gap["gap"]])
 
 func _snap_to_nearest_doorway() -> void:
 	var n: Node3D = dock.get_target_node()
@@ -230,8 +255,9 @@ func _snap_to_nearest_doorway() -> void:
 	var inward_normals := {"north": Vector3.BACK, "south": Vector3.FORWARD,
 						   "east": Vector3.LEFT, "west": Vector3.RIGHT}
 	var inward: Vector3 = inward_normals.get(info["side"], Vector3.ZERO)
-	n.global_position = wpos + inward * _door_inset.value
-	dock._say("Snapped %s to %s doorway (%.1fm \u00d7 %.1fm)." % [n.name, info["side"], info["width"], info["height"]])
+	_commit_object_move(n, wpos + inward * _door_inset.value,
+			"Snap %s to %s doorway" % [n.name, info["side"]],
+			"Snapped %s to %s doorway (%.1fm by %.1fm)." % [n.name, info["side"], info["width"], info["height"]])
 
 # --- Helpers ---
 

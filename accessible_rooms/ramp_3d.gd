@@ -65,7 +65,6 @@ func _queue_rebuild() -> void:
 func rebuild() -> void:
 	_rebuild_queued = false
 	var my_gen := _rebuild_gen
-	if not Engine.is_editor_hint(): return
 	for c in get_children():
 		if c.has_meta("generated") or c.has_meta("ramp_area"):
 			remove_child(c)
@@ -105,7 +104,8 @@ func _build_ramp() -> void:
 	var slope_hyp: float = sqrt(slope_length_h * slope_length_h + height_change * height_change)
 
 	# Sloped floor (lifted by floor_thickness so walking surfaces align with rooms)
-	var floor_center: Vector3 = travel_dir * slope_center_off + Vector3.UP * (ft + height_change / 2.0)
+	var cos_theta: float = slope_length_h / slope_hyp
+	var floor_center: Vector3 = travel_dir * slope_center_off + Vector3.UP * (ft + height_change / 2.0 - WALL_THICKNESS / 2.0 * cos_theta)
 	var floor_sz := Vector3(width, slope_hyp, WALL_THICKNESS)
 	var floor_normal := perp_dir.cross(slope_dir).normalized()
 	var landing_normal := perp_dir.cross(travel_dir).normalized()  # = UP
@@ -147,10 +147,6 @@ func _build_ramp_area() -> void:
 	cs.shape = box
 	area.add_child(cs)
 	add_child(area)
-	var root := get_tree().edited_scene_root
-	if root:
-		area.owner = root
-		cs.owner = root
 
 ## Footprint AABB in this ramp's local frame. The room uses this to compute
 ## a ceiling cutout when the ramp pokes through.

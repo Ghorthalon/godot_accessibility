@@ -72,7 +72,6 @@ func _queue_rebuild() -> void:
 func rebuild() -> void:
 	_rebuild_queued = false
 	var my_gen := _rebuild_gen
-	if not Engine.is_editor_hint(): return
 	for c in get_children():
 		if c.has_meta("generated") or c.has_meta("stairs_area"):
 			remove_child(c)
@@ -137,7 +136,7 @@ func _build_stairs() -> void:
 	for i in n:
 		var tread_center: Vector3 = \
 			travel_dir * (slope_center_off + (-slope_half + (i + 0.5) * sd)) + \
-			Vector3.UP * (ft + (i + 1) * sh)
+			Vector3.UP * (ft + (i + 1) * sh - WALL_THICKNESS / 2.0)
 		_spawn_box(self, "tread_%d" % i,
 			Transform3D(Basis(perp_dir, travel_dir, tread_normal), tread_center), tread_sz, surface_floor)
 
@@ -185,10 +184,6 @@ func _build_stairs_area() -> void:
 	cs.shape = box
 	area.add_child(cs)
 	add_child(area)
-	var root := get_tree().edited_scene_root
-	if root:
-		area.owner = root
-		cs.owner = root
 
 ## Footprint AABB in this stair's local frame. The room uses this to compute
 ## a ceiling cutout when the stair pokes through.

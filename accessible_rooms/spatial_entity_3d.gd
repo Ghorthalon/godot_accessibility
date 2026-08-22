@@ -133,11 +133,33 @@ static func _add_spinbox(c: VBoxContainer, lbl: String,
 var _rebuild_queued := false
 var _rebuild_gen    := 0
 
+## Builds geometry synchronously as soon as the whole tree is available.
+##
+## Outside the editor this is mandatory, not an optimisation: _enter_tree only
+## QUEUES a deferred rebuild, which does not run until the end of the first
+## frame, so the first physics tick would find no floor and a character standing
+## on it would drop straight through. _ready is the earliest safe point -- every
+## node is in the tree by now, so wall suppression between neighbouring rooms
+## still resolves against a complete scene.
+##
+## In the editor the deferred path is kept, so a burst of property edits still
+## coalesces into one rebuild.
+func _ready() -> void:
+	if not Engine.is_editor_hint():
+		rebuild()
+
 func _queue_rebuild() -> void:
 	if is_inside_tree() and not _rebuild_queued:
 		_rebuild_queued = true
 		_rebuild_gen   += 1
-		call_deferred("rebuild")
+		call_deferred("_deferred_rebuild")
+
+## Deferred entry point. Skips the work when something already rebuilt
+## synchronously in the meantime (rebuild() clears _rebuild_queued), so the
+## _ready build above does not get duplicated a frame later.
+func _deferred_rebuild() -> void:
+	if not _rebuild_queued: return
+	rebuild()
 
 ## Returns true when the queued rebuild has been superseded by a newer one.
 ## Call after await get_tree().process_frame inside each subclass rebuild
@@ -153,6 +175,12 @@ func _check_rebuild_stale(gen: int) -> bool:
 
 ## Creates StaticBody3D -> MeshInstance3D(BoxMesh) -> CollisionShape3D(BoxShape3D)
 ## tagged "generated" + "surface", oriented by xform, added to parent.
+##
+## Deliberately does NOT set owner: generated geometry is derived data, rebuilt
+## from the entity's properties whenever it enters the tree, in the editor and
+## at runtime alike. Leaving it unowned keeps it out of the .tscn entirely, so
+## a scene file stays a short list of rooms instead of thousands of boxes, and
+## nudging one room no longer rewrites the whole file.
 static func _spawn_box(parent: Node3D, body_name: String,
 		xform: Transform3D, sz: Vector3, surface: String) -> StaticBody3D:
 	var body := StaticBody3D.new()
@@ -166,7 +194,4 @@ static func _spawn_box(parent: Node3D, body_name: String,
 	body.add_child(mi); body.add_child(cs)
 	parent.add_child(body)
 	body.transform = xform
-	var root := parent.get_tree().edited_scene_root
-	if root:
-		for n: Node in [body, mi, cs]: n.owner = root
 	return body

@@ -31,6 +31,7 @@ var cursor: Vector3 = Vector3.ZERO
 var step: float = 1.0
 var current_entity: SpatialEntity3D
 var scene_query: SceneQuery
+var ops: EditOps  # undo/redo facade, every scene mutation goes through this
 
 var use_selected_node: bool = false
 var follow_selection: bool = false
@@ -73,6 +74,8 @@ func _ready() -> void:
 	scene_query.plugin = plugin
 	scene_query.dock = self
 	add_child(scene_query)
+
+	ops = EditOps.new(plugin)
 
 	var toggle := CheckButton.new()
 	toggle.text = "Use selected node as parent"
@@ -159,21 +162,10 @@ func _shortcut_input(event: InputEvent) -> void:
 	if not event is InputEventKey: return
 	var key := event as InputEventKey
 	if not key.pressed or key.echo: return
-	# Shift+Space activates the focused button with Shift still held, so handlers
-	# that check Input.is_key_pressed(KEY_SHIFT) (e.g. force-place over a collision)
-	# see it. Godot's BaseButton ignores Space while a modifier is down, so the
-	# normal ui_accept never fires for keyboard users -- we trigger it ourselves.
-	if key.keycode == KEY_SPACE and key.shift_pressed \
-			and not key.alt_pressed and not key.ctrl_pressed and not key.meta_pressed:
-		var focused := get_viewport().gui_get_focus_owner()
-		if focused is BaseButton and not (focused as BaseButton).disabled:
-			get_viewport().set_input_as_handled()
-			var btn := focused as BaseButton
-			if btn.toggle_mode:
-				btn.button_pressed = not btn.button_pressed  # emits toggled
-			else:
-				btn.emit_signal("pressed")
-		return
+	# The Shift+Space hack that used to live here existed only so keyboard users
+	# could reach the Shift-to-force paths (Godot's BaseButton ignores Space
+	# while a modifier is held). Forcing is now done through the Proceed/Cancel
+	# confirm bar, which is reachable with plain Space, so the hack is gone.
 	if key.alt_pressed   != FOCUS_MOD_ALT:   return
 	if key.shift_pressed != FOCUS_MOD_SHIFT: return
 	if key.ctrl_pressed  != FOCUS_MOD_CTRL:  return

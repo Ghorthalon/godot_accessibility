@@ -2,6 +2,7 @@
 extends VBoxContainer
 
 var dock  # reference to parent dock (dock.gd)
+var confirm: ConfirmBar
 
 var ramp_w: SpinBox
 var ramp_len: SpinBox
@@ -67,6 +68,10 @@ func _ready() -> void:
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(hint)
 
+	confirm = ConfirmBar.new()
+	confirm.dock = dock
+	add_child(confirm)
+
 func _build_ramp_node() -> Ramp3D:
 	var r := Ramp3D.new()
 	r.width         = ramp_w.value
@@ -85,10 +90,7 @@ func _place_in_room_at_cursor() -> void:
 	var r := _build_ramp_node()
 	r.floor_thickness = room.wall_floor.thickness if room.wall_floor else 0.0
 	r.name = "%s_ramp%d" % [room.name, room.get_child_count() + 1]
-	room.add_child(r)
-	r.owner = dock.scene_query.edited_root()
-	r.position = room.to_local(dock.cursor)
-	r.rebuild()
+	dock.ops.add_node(room, r, "Place ramp %s in %s" % [r.name, room.name], dock.cursor)
 	for tab in get_parent().get_children():
 		if tab.has_method("_refresh"): tab._refresh()
 	dock._say_ok(("Placed ramp in %s at cursor, high end %s. " +
@@ -124,10 +126,7 @@ func _place_in_room_from_corners() -> void:
 		aabb.position.x + aabb.size.x / 2.0,
 		aabb.position.y,
 		aabb.position.z + aabb.size.z / 2.0)
-	room.add_child(r)
-	r.owner = dock.scene_query.edited_root()
-	r.position = room.to_local(world_pos)
-	r.rebuild()
+	dock.ops.add_node(room, r, "Place ramp %s in %s" % [r.name, room.name], world_pos)
 
 	for tab in get_parent().get_children():
 		if tab.has_method("_refresh"): tab._refresh()
@@ -147,24 +146,27 @@ func _new_standalone_ramp() -> void:
 		"north", "south": footprint = Vector3(r.width, r.height_change + r.clearance, r.length)
 		"east",  "west":  footprint = Vector3(r.length, r.height_change + r.clearance, r.width)
 
-	var conflict: String = dock.scene_query.first_overlap(dock.cursor, footprint, root)
-	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
-		dock._say("Cannot place ramp: overlaps with %s. Move cursor clear first, or hold Shift to force." % conflict)
+	var pos: Vector3 = dock.cursor
+	var conflict: String = dock.scene_query.first_overlap(pos, footprint)
+	if conflict != "":
+		confirm.ask("A ramp at the cursor would overlap %s." % conflict, "Place anyway",
+				func(): _commit_standalone_ramp(root, r, pos, "at cursor", conflict))
 		return
-	elif conflict != "":
-		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
+	_commit_standalone_ramp(root, r, pos, "at cursor", "")
 
-	root.add_child(r)
-	r.owner = dock.scene_query.edited_root()
-	r.global_position = dock.cursor
-	r.rebuild()
+## Shared tail for both standalone placements, so the confirmed path and the
+## unobstructed path insert and announce identically.
+func _commit_standalone_ramp(root: Node, r: Ramp3D, pos: Vector3,
+		where: String, conflict: String) -> void:
+	dock.ops.add_node(root, r, "Place ramp %s" % r.name, pos)
 
 	for tab in get_parent().get_children():
 		if tab.has_method("_refresh"): tab._refresh()
 
-	dock._say(("Placed standalone ramp at cursor, high end %s. " +
-		"Rise %.1fm over %.1fm (%.0f deg).") % \
-		[r.high_end, r.height_change, r.length, r.slope_degrees()])
+	var msg := "Placed standalone ramp %s, high end %s. Rise %.1fm over %.1fm (%.0f deg)." % [where, r.high_end, r.height_change, r.length, r.slope_degrees()]
+	if conflict != "": msg += " Note: it overlaps %s." % conflict
+	msg += " Press Control Z to undo."
+	dock._say_ok(msg)
 
 func _place_ramps_from_corners() -> void:
 	var root: Node = dock.scene_query.placement_parent()
@@ -199,24 +201,12 @@ func _place_ramps_from_corners() -> void:
 		aabb.position.y,
 		aabb.position.z + aabb.size.z / 2.0)
 
-	var conflict: String = dock.scene_query.first_overlap(pos, footprint, root)
-	if conflict != "" and not Input.is_key_pressed(KEY_SHIFT):
-		dock._say("Cannot place ramp: overlaps with %s. Hold Shift to force." % conflict)
+	var conflict: String = dock.scene_query.first_overlap(pos, footprint)
+	if conflict != "":
+		confirm.ask("A ramp from corners would overlap %s." % conflict, "Place anyway",
+				func(): _commit_standalone_ramp(root, r, pos, "from corners", conflict))
 		return
-	elif conflict != "":
-		dock._say("Warning: overlaps with %s, placing anyway (Shift held)." % conflict)
-
-	root.add_child(r)
-	r.owner = dock.scene_query.edited_root()
-	r.global_position = pos
-	r.rebuild()
-
-	for tab in get_parent().get_children():
-		if tab.has_method("_refresh"): tab._refresh()
-
-	dock._say(("Placed ramp from corners, high end %s. " +
-		"Rise %.1fm over %.1fm (%.0f deg).") % \
-		[r.high_end, r.height_change, r.length, r.slope_degrees()])
+	_commit_standalone_ramp(root, r, pos, "from corners", "")
 
 func _spinbox(min_v: float, max_v: float, step_v: float, default_v: float) -> SpinBox:
 	var s := SpinBox.new()

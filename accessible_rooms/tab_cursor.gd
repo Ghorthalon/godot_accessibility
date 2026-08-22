@@ -139,6 +139,18 @@ func _report_cursor() -> void:
 	var containers: Array[SpatialEntity3D] = dock.scene_query.entities_containing_sorted(dock.cursor)
 	var container: SpatialEntity3D = containers[0] if not containers.is_empty() else null
 	parts.append("in " + dock.scene_query.entity_label(container) if container else "outside any room")
+	# Height above the floor SURFACE, not above the room origin: the floor slab
+	# grows inward, so those differ by the floor thickness and only the former
+	# tells you whether something placed here would be sitting in the ground.
+	if container is Room3D:
+		var room := container as Room3D
+		var above: float = dock.cursor.y - room.floor_surface_y()
+		if absf(above) < 0.005:
+			parts.append("exactly on the floor surface")
+		elif above < 0.0:
+			parts.append("%.2fm BELOW the floor surface, inside the ground" % -above)
+		else:
+			parts.append("%.2fm above the floor surface, %.2fm headroom" % 					[above, room.ceiling_surface_y() - dock.cursor.y])
 
 	var nearby: Array[Node3D] = dock.scene_query.nearby_point_nodes(dock.cursor, dock.step)
 	if not nearby.is_empty():

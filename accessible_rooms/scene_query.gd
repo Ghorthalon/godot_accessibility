@@ -256,8 +256,9 @@ func nearest_in_direction(from: Vector3, dir: Vector3) -> Node:
 	var dir_n := dir.normalized()
 	for entity in entities_in_scene():
 		var to_e := entity_position(entity) - from
-		if to_e.dot(dir_n) <= 0.01: continue
 		var d := to_e.length()
+		if d < SpatialEntity3D.EPSILON: continue
+		if to_e.normalized().dot(dir_n) < 0.707: continue  # 45° half-cone
 		if d < best_dist:
 			best_dist = d; best = entity
 	return best
@@ -322,11 +323,12 @@ func _get_space() -> PhysicsDirectSpaceState3D:
 	if root == null or not root is Node3D: return null
 	return (root as Node3D).get_world_3d().direct_space_state
 
-## Returns the name of the first SpatialEntity3D in root whose footprint overlaps
+## Returns the name of the first SpatialEntity3D in the scene whose footprint overlaps
 ## the proposed placement at pos with the given footprint size. Returns "" if clear.
+## Scans the whole edited scene (including entities nested inside containers).
 ## Pass exclude to skip a node (e.g. the node being moved, to avoid selfcollision).
-func first_overlap(pos: Vector3, footprint: Vector3, root: Node, exclude: Node = null) -> String:
-	for child in root.get_children():
+func first_overlap(pos: Vector3, footprint: Vector3, exclude: Node = null) -> String:
+	for child in entities_in_scene():
 		if child == exclude: continue
 		if not child is SpatialEntity3D: continue
 		var child_fp := _entity_footprint(child as SpatialEntity3D)
@@ -339,13 +341,14 @@ func first_overlap(pos: Vector3, footprint: Vector3, root: Node, exclude: Node =
 		return child.name
 	return ""
 
-## Returns all Room3D nodes in root whose opposite wall is flush with room's side wall
-## and whose footprint overlaps on the perpendicular axis.
-func rooms_flush_with_wall(room: Room3D, side: String, root: Node) -> Array[Room3D]:
+## Returns all Room3D nodes in the scene whose opposite wall is flush with room's
+## side wall and whose footprint overlaps on the perpendicular axis.
+## Scans the whole edited scene (including rooms nested inside containers).
+func rooms_flush_with_wall(room: Room3D, side: String) -> Array[Room3D]:
 	var opp := _opposite_side(side)
 	var plane := Room3D._wall_plane_coord(room, side)
 	var result: Array[Room3D] = []
-	for child in root.get_children():
+	for child in entities_in_scene():
 		if child == room or not child is Room3D: continue
 		var other := child as Room3D
 		if absf(Room3D._wall_plane_coord(other, opp) - plane) > SpatialEntity3D.EPSILON: continue
@@ -364,16 +367,16 @@ func _opposite_side(side: String) -> String:
 func _rooms_share_wall_footprint(a: Room3D, side: String, b: Room3D) -> bool:
 	match side:
 		"north", "south":
-			var a_lo := a.position.x - a.size.x / 2.0
-			var a_hi := a.position.x + a.size.x / 2.0
-			var b_lo := b.position.x - b.size.x / 2.0
-			var b_hi := b.position.x + b.size.x / 2.0
+			var a_lo := a.global_position.x - a.size.x / 2.0
+			var a_hi := a.global_position.x + a.size.x / 2.0
+			var b_lo := b.global_position.x - b.size.x / 2.0
+			var b_hi := b.global_position.x + b.size.x / 2.0
 			return a_hi > b_lo + SpatialEntity3D.EPSILON and b_hi > a_lo + SpatialEntity3D.EPSILON
 		"east", "west":
-			var a_lo := a.position.z - a.size.z / 2.0
-			var a_hi := a.position.z + a.size.z / 2.0
-			var b_lo := b.position.z - b.size.z / 2.0
-			var b_hi := b.position.z + b.size.z / 2.0
+			var a_lo := a.global_position.z - a.size.z / 2.0
+			var a_hi := a.global_position.z + a.size.z / 2.0
+			var b_lo := b.global_position.z - b.size.z / 2.0
+			var b_hi := b.global_position.z + b.size.z / 2.0
 			return a_hi > b_lo + SpatialEntity3D.EPSILON and b_hi > a_lo + SpatialEntity3D.EPSILON
 	return false
 
@@ -406,9 +409,14 @@ func wall_gap(from: Vector3, dir: Vector3, max_dist := 30.0) -> Dictionary:
 	return {"hit_a": ha, "hit_b": hb, "midpoint": ((ha as Vector3) + (hb as Vector3)) / 2.0, "gap": (ha as Vector3).distance_to(hb as Vector3)}
 
 ## Returns {room, side, world_pos, width, height, cu, cv} for the nearest doorway
-## opening to near_pos, or {}. Searches all walls of the room containing near_pos.
+## opening to near_pos, or {}. Searches all walls of the innermost room containing
+## near_pos (not just the first match in tree order, which could be an outer room).
 func nearest_doorway(near_pos: Vector3) -> Dictionary:
-	var room := entity_containing(near_pos) as Room3D
+	var room: Room3D = null
+	for e in entities_containing_sorted(near_pos):
+		if e is Room3D:
+			room = e as Room3D
+			break
 	if room == null: return {}
 	var best := {}
 	var best_dist := INF
@@ -442,21 +450,33 @@ func measure_space(from: Vector3, max_dist := 30.0) -> Dictionary:
 ## Coordinate convention matches _punch_at_cursor in tab_rooms.gd:
 ##   north/south: bu = RIGHT (+X), east/west: bu = BACK (-Z)
 func _doorway_world_pos(room: Room3D, side: String, cu: float, cv: float) -> Vector3:
+	return doorway_world_pos_at(room.global_position, room.size, side, cu, cv)
+
+## Position-explicit form of _doorway_world_pos, for rooms that are not in the
+## tree yet (a neighbour being created) or are about to move to room_pos.
+static func doorway_world_pos_at(room_pos: Vector3, room_size: Vector3,
+		side: String, cu: float, cv: float) -> Vector3:
 	var wall_center: Vector3
 	var bu: Vector3
 	match side:
-		"north": wall_center = Vector3(0, room.size.y / 2.0, -room.size.z / 2.0); bu = Vector3.RIGHT
-		"south": wall_center = Vector3(0, room.size.y / 2.0,  room.size.z / 2.0); bu = Vector3.RIGHT
-		"east":  wall_center = Vector3( room.size.x / 2.0, room.size.y / 2.0, 0); bu = Vector3.FORWARD
-		"west":  wall_center = Vector3(-room.size.x / 2.0, room.size.y / 2.0, 0); bu = Vector3.FORWARD
-	return room.global_position + wall_center + bu * cu + Vector3.UP * cv
+		"north": wall_center = Vector3(0, room_size.y / 2.0, -room_size.z / 2.0); bu = Vector3.RIGHT
+		"south": wall_center = Vector3(0, room_size.y / 2.0,  room_size.z / 2.0); bu = Vector3.RIGHT
+		"east":  wall_center = Vector3( room_size.x / 2.0, room_size.y / 2.0, 0); bu = Vector3.FORWARD
+		"west":  wall_center = Vector3(-room_size.x / 2.0, room_size.y / 2.0, 0); bu = Vector3.FORWARD
+	return room_pos + wall_center + bu * cu + Vector3.UP * cv
 
 ## Returns a world Transform3D for the wall point at (cu, cv) on the named side of room.
 ## Position is the wall-local point; -Z (Godot's local forward) faces into the room interior.
 ## Generic primitive for placing any wall-aligned scene: doors, windows, paintings,
 ## light switches, signs. Pair with nearest_doorway() or any (room, side, cu, cv) source.
 func wall_facing_transform(room: Room3D, side: String, cu: float, cv: float) -> Transform3D:
-	var origin: Vector3 = _doorway_world_pos(room, side, cu, cv)
+	return wall_facing_transform_at(room.global_position, room.size, side, cu, cv)
+
+## Position-explicit form of wall_facing_transform. Use when the room is not in
+## the tree yet, so global_position would still read as zero.
+static func wall_facing_transform_at(room_pos: Vector3, room_size: Vector3,
+		side: String, cu: float, cv: float) -> Transform3D:
+	var origin: Vector3 = doorway_world_pos_at(room_pos, room_size, side, cu, cv)
 	var inward: Vector3
 	match side:
 		"north": inward = Vector3.BACK
@@ -620,6 +640,11 @@ func find_connections(entity: SpatialEntity3D) -> Array[ConnectionInfo]:
 			else:
 				info.status = _wall_open_status(room, wall_side,
 					face["face_center_world"], face["face_width"], face["face_height"])
+				# A door punched only on the source side also creates a physical opening.
+				# If neighbor says BLOCKED, also check the source entity's own door list.
+				if info.status == ConnectionInfo.Status.BLOCKED and entity is Room3D:
+					info.status = _wall_open_status(entity as Room3D, face["label"],
+						face["face_center_world"], face["face_width"], face["face_height"])
 		else:
 			info.to_wall_side = ""
 			info.status = ConnectionInfo.Status.OPEN  # ramps/stairs have open ends
@@ -751,8 +776,8 @@ func _ranges_overlap(a_lo: float, a_hi: float, b_lo: float, b_hi: float) -> bool
 func _gap_midpoint(neg_face: Dictionary, pos_face: Dictionary, gap: float) -> Vector3:
 	var perp_center: float = ((neg_face["perp_lo"] as float + neg_face["perp_hi"] as float) / 2.0 + \
 						(pos_face["perp_lo"] as float + pos_face["perp_hi"] as float) / 2.0) / 2.0
-	var y_center: float = (minf(neg_face["y_lo"] as float, pos_face["y_lo"] as float) + \
-					 maxf(neg_face["y_hi"] as float, pos_face["y_hi"] as float)) / 2.0
+	var y_center: float = (maxf(neg_face["y_lo"] as float, pos_face["y_lo"] as float) + \
+					 minf(neg_face["y_hi"] as float, pos_face["y_hi"] as float)) / 2.0
 	var gap_center: float = (pos_face["plane_pos"] as float) + gap / 2.0
 	match neg_face["axis"]:
 		"x":

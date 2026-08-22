@@ -146,6 +146,20 @@ func _build_ui() -> void:
 	remove_phys_btn.pressed.connect(_on_remove_physics_layer_pressed)
 	phys_buttons.add_child(remove_phys_btn)
 
+	var edit_phys_btn := Button.new()
+	edit_phys_btn.text = "Edit physics layer..."
+	_set_a11y(edit_phys_btn, "Edit selected physics layer",
+		"Choose which project collision layers this TileSet physics layer lives on and which it scans.")
+	edit_phys_btn.pressed.connect(_on_edit_physics_layer_pressed)
+	phys_buttons.add_child(edit_phys_btn)
+
+	var name_phys_btn := Button.new()
+	name_phys_btn.text = "Name project collision layers..."
+	_set_a11y(name_phys_btn, "Name project collision layers",
+		"Rename the 32 project-wide 2D physics layers so they can be picked by name here and elsewhere.")
+	name_phys_btn.pressed.connect(func(): _open_project_layer_names_dialog("2d_physics", "collision"))
+	phys_buttons.add_child(name_phys_btn)
+
 	# --- Navigation layers ---
 	_make_label(root, "Navigation layers:")
 	_navigation_layer_list = ItemList.new()
@@ -171,6 +185,20 @@ func _build_ui() -> void:
 		"Remove the selected navigation layer from this TileSet. All tile navigation data on it is lost.")
 	remove_nav_btn.pressed.connect(_on_remove_navigation_layer_pressed)
 	nav_buttons.add_child(remove_nav_btn)
+
+	var edit_nav_btn := Button.new()
+	edit_nav_btn.text = "Edit navigation layer..."
+	_set_a11y(edit_nav_btn, "Edit selected navigation layer",
+		"Choose which project navigation layers this TileSet navigation layer belongs to.")
+	edit_nav_btn.pressed.connect(_on_edit_navigation_layer_pressed)
+	nav_buttons.add_child(edit_nav_btn)
+
+	var name_nav_btn := Button.new()
+	name_nav_btn.text = "Name project navigation layers..."
+	_set_a11y(name_nav_btn, "Name project navigation layers",
+		"Rename the 32 project-wide 2D navigation layers so they can be picked by name here and elsewhere.")
+	name_nav_btn.pressed.connect(func(): _open_project_layer_names_dialog("2d_navigation", "navigation"))
+	nav_buttons.add_child(name_nav_btn)
 
 	# --- Source chooser ---
 	_make_label(root, "Source:")
@@ -748,8 +776,13 @@ func _refresh_physics_layer_list() -> void:
 	_physics_layer_list.clear()
 	if _tileset == null:
 		return
+	var names := _project_layer_names("2d_physics")
 	for i in _tileset.get_physics_layers_count():
-		_physics_layer_list.add_item("Layer %d" % i)
+		_physics_layer_list.add_item("Physics layer %d,  on: %s; scans: %s" % [
+			i,
+			_mask_summary(_tileset.get_physics_layer_collision_layer(i), names),
+			_mask_summary(_tileset.get_physics_layer_collision_mask(i), names),
+		])
 
 
 func _on_add_physics_layer_pressed() -> void:
@@ -788,8 +821,10 @@ func _refresh_navigation_layer_list() -> void:
 	_navigation_layer_list.clear()
 	if _tileset == null:
 		return
+	var names := _project_layer_names("2d_navigation")
 	for i in _tileset.get_navigation_layers_count():
-		_navigation_layer_list.add_item("Layer %d" % i)
+		_navigation_layer_list.add_item("Navigation layer %d,  on: %s" % [
+			i, _mask_summary(_tileset.get_navigation_layer_layers(i), names)])
 
 
 func _on_add_navigation_layer_pressed() -> void:
@@ -1321,3 +1356,234 @@ func _set_a11y(c: Control, name: String, desc: String = "") -> void:
 		c.call(&"set_accessibility_name", name)
 	if not desc.is_empty() and c.has_method(&"set_accessibility_description"):
 		c.call(&"set_accessibility_description", desc)
+
+
+# ----- Project-wide layer names (ProjectSettings) -----
+
+# Godot's physics/navigation layers are project-wide numbered slots; the names
+# live in ProjectSettings under layer_names/<kind>/layer_N. A TileSet physics
+# layer does not carry a name of its own, it carries bitmasks referring to
+# those slots. These helpers surface the names so the masks read as words.
+func _project_layer_names(kind: String) -> PackedStringArray:
+	var names := PackedStringArray()
+	for i in range(1, 33):
+		var setting := "layer_names/%s/layer_%d" % [kind, i]
+		var n := ""
+		if ProjectSettings.has_setting(setting):
+			n = str(ProjectSettings.get_setting(setting)).strip_edges()
+		names.append(n if not n.is_empty() else "Layer %d" % i)
+	return names
+
+
+func _mask_summary(mask: int, names: PackedStringArray) -> String:
+	var parts: Array[String] = []
+	for i in 32:
+		if mask & (1 << i):
+			parts.append(names[i])
+	if parts.is_empty():
+		return "none"
+	return ", ".join(parts)
+
+
+func _open_project_layer_names_dialog(kind: String, noun: String) -> void:
+	var dlg := AcceptDialog.new()
+	dlg.title = "Name project %s layers" % noun
+	dlg.min_size = Vector2(420, 480)
+
+	var vb := VBoxContainer.new()
+	dlg.add_child(vb)
+
+	var lbl := Label.new()
+	lbl.text = "Names for the 32 project-wide 2D %s layers. Blank means unnamed." % noun
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vb.add_child(lbl)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, 380)
+	vb.add_child(scroll)
+
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(list)
+
+	var fields: Array[LineEdit] = []
+	for i in range(1, 33):
+		var setting := "layer_names/%s/layer_%d" % [kind, i]
+		var row := HBoxContainer.new()
+		list.add_child(row)
+		var num := Label.new()
+		num.text = "%d:" % i
+		num.custom_minimum_size = Vector2(30, 0)
+		row.add_child(num)
+		var field := LineEdit.new()
+		field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if ProjectSettings.has_setting(setting):
+			field.text = str(ProjectSettings.get_setting(setting))
+		_set_a11y(field, "%s layer %d name" % [noun.capitalize(), i],
+			"Name for project 2D %s layer %d." % [noun, i])
+		row.add_child(field)
+		fields.append(field)
+
+	dlg.get_ok_button().text = "Save"
+	add_child(dlg)
+	dlg.popup_centered()
+	fields[0].grab_focus()
+
+	dlg.confirmed.connect(func():
+		var named := 0
+		for i in 32:
+			var setting := "layer_names/%s/layer_%d" % [kind, i + 1]
+			var value := fields[i].text.strip_edges()
+			if value.is_empty():
+				if ProjectSettings.has_setting(setting):
+					ProjectSettings.set_setting(setting, "")
+			else:
+				ProjectSettings.set_setting(setting, value)
+				named += 1
+		ProjectSettings.save()
+		announcer.speak("Saved project %s layer names. %d named." % [noun, named],
+			AccessibleAnnouncer.Priority.ASSERTIVE)
+		_refresh_physics_layer_list()
+		_refresh_navigation_layer_list()
+		dlg.queue_free()
+	)
+	dlg.canceled.connect(func(): dlg.queue_free())
+
+
+func _add_mask_section(parent: Container, title: String, desc: String,
+		mask: int, names: PackedStringArray) -> Array[CheckBox]:
+	_make_label(parent, title)
+	var boxes: Array[CheckBox] = []
+	for i in 32:
+		var cb := CheckBox.new()
+		cb.text = "%d: %s" % [i + 1, names[i]]
+		cb.button_pressed = bool(mask & (1 << i))
+		_set_a11y(cb, "%s, %s" % [title.rstrip(":"), cb.text], desc)
+		parent.add_child(cb)
+		boxes.append(cb)
+	return boxes
+
+
+func _mask_from_boxes(boxes: Array[CheckBox]) -> int:
+	var mask := 0
+	for i in boxes.size():
+		if boxes[i].button_pressed:
+			mask |= 1 << i
+	return mask
+
+
+# ----- Physics layer bitmask editing -----
+
+func _on_edit_physics_layer_pressed() -> void:
+	if _tileset == null:
+		announcer.speak("No TileSet loaded.", AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	var selected := _physics_layer_list.get_selected_items()
+	if selected.is_empty():
+		announcer.speak("No physics layer selected.", AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	var idx: int = selected[0]
+	var names := _project_layer_names("2d_physics")
+
+	var dlg := AcceptDialog.new()
+	dlg.title = "Edit physics layer %d" % idx
+	dlg.min_size = Vector2(420, 480)
+
+	var vb := VBoxContainer.new()
+	dlg.add_child(vb)
+
+	var lbl := Label.new()
+	lbl.text = "Which project collision layers tiles on this physics layer occupy, and which layers they detect."
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vb.add_child(lbl)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, 380)
+	vb.add_child(scroll)
+
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(list)
+
+	var layer_boxes := _add_mask_section(list, "Collision layer:",
+		"Layers these tiles are placed on, so other bodies can detect them.",
+		_tileset.get_physics_layer_collision_layer(idx), names)
+	var mask_boxes := _add_mask_section(list, "Collision mask:",
+		"Layers these tiles scan for collisions.",
+		_tileset.get_physics_layer_collision_mask(idx), names)
+
+	dlg.get_ok_button().text = "Apply"
+	add_child(dlg)
+	dlg.popup_centered()
+	layer_boxes[0].grab_focus()
+
+	dlg.confirmed.connect(func():
+		var new_layer := _mask_from_boxes(layer_boxes)
+		var new_mask := _mask_from_boxes(mask_boxes)
+		_tileset.set_physics_layer_collision_layer(idx, new_layer)
+		_tileset.set_physics_layer_collision_mask(idx, new_mask)
+		_refresh_physics_layer_list()
+		_physics_layer_list.select(idx)
+		announcer.speak("Physics layer %d is on %s and scans %s." % [
+			idx, _mask_summary(new_layer, names), _mask_summary(new_mask, names)],
+			AccessibleAnnouncer.Priority.ASSERTIVE)
+		dlg.queue_free()
+	)
+	dlg.canceled.connect(func(): dlg.queue_free())
+
+
+# ----- Navigation layer bitmask editing -----
+
+func _on_edit_navigation_layer_pressed() -> void:
+	if _tileset == null:
+		announcer.speak("No TileSet loaded.", AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	var selected := _navigation_layer_list.get_selected_items()
+	if selected.is_empty():
+		announcer.speak("No navigation layer selected.", AccessibleAnnouncer.Priority.ASSERTIVE)
+		return
+	var idx: int = selected[0]
+	var names := _project_layer_names("2d_navigation")
+
+	var dlg := AcceptDialog.new()
+	dlg.title = "Edit navigation layer %d" % idx
+	dlg.min_size = Vector2(420, 480)
+
+	var vb := VBoxContainer.new()
+	dlg.add_child(vb)
+
+	var lbl := Label.new()
+	lbl.text = "Which project navigation layers agents must include to walk on tiles using this layer."
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vb.add_child(lbl)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, 380)
+	vb.add_child(scroll)
+
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(list)
+
+	var boxes := _add_mask_section(list, "Navigation layers:",
+		"Navigation layers this TileSet navigation layer belongs to.",
+		_tileset.get_navigation_layer_layers(idx), names)
+
+	dlg.get_ok_button().text = "Apply"
+	add_child(dlg)
+	dlg.popup_centered()
+	boxes[0].grab_focus()
+
+	dlg.confirmed.connect(func():
+		var new_layers := _mask_from_boxes(boxes)
+		_tileset.set_navigation_layer_layers(idx, new_layers)
+		_refresh_navigation_layer_list()
+		_navigation_layer_list.select(idx)
+		announcer.speak("Navigation layer %d is on %s." % [idx, _mask_summary(new_layers, names)],
+			AccessibleAnnouncer.Priority.ASSERTIVE)
+		dlg.queue_free()
+	)
+	dlg.canceled.connect(func(): dlg.queue_free())

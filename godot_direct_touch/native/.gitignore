@@ -1,0 +1,7 @@
+# SCons build artifacts. The shipped binaries live in ../bin and are committed.
+*.o
+*.os
+*.pyc
+__pycache__/
+.sconsign.dblite
+godot-cpp/bin/

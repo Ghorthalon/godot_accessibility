@@ -1,0 +1,16 @@
+[configuration]
+
+entry_symbol = "direct_touch_library_init"
+compatibility_minimum = "4.5"
+
+[libraries]
+
+; iOS is the only platform where this addon does anything. Every other entry is
+; a no-op stub, present so the extension loads cleanly in the editor instead of
+; erroring with "No library found for this platform".
+
+ios.debug     = "bin/ios/libdirect_touch.ios.template_debug.arm64.a"
+ios.release   = "bin/ios/libdirect_touch.ios.template_release.arm64.a"
+
+macos.debug   = "bin/macos/libdirect_touch.macos.template_debug.framework"
+macos.release = "bin/macos/libdirect_touch.macos.template_release.framework"

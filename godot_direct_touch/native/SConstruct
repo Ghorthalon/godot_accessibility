@@ -1,0 +1,120 @@
+#!/usr/bin/env python
+"""Build the direct_touch GDExtension.
+
+iOS is the only platform that does anything; every other target compiles the
+same sources down to a stub so the extension still loads in the editor.
+
+    scons platform=ios   target=template_debug   arch=arm64
+    scons platform=ios   target=template_release arch=arm64
+    scons platform=macos target=template_debug
+    scons platform=macos target=template_release
+
+Binaries land in ../bin/<platform>/ where godot_direct_touch.gdextension
+expects them.
+"""
+
+import os
+import subprocess
+
+env = SConscript("godot-cpp/SConstruct")
+
+env.Append(CPPPATH=["src/"])
+
+sources = Glob("src/*.cpp")
+
+# Objective-C++ only exists on the Apple targets. ARC is on: the .mm file holds
+# UIKit references and hand-rolled retain/release here would be pure risk.
+if env["platform"] in ("ios", "macos"):
+    env.Append(CXXFLAGS=["-fobjc-arc"])
+    sources += Glob("src/*.mm")
+
+libname = "libdirect_touch"
+out_dir = os.path.join("..", "bin", env["platform"])
+
+if env["platform"] == "macos":
+    # Godot loads macOS extensions as framework bundles, and reads the bundle's
+    # Info.plist to work out which file inside it is the binary. Without the
+    # plist the extension fails to load in the editor.
+    framework = "{}/{}.macos.{}.framework".format(out_dir, libname, env["target"])
+    target = "{}/{}.macos.{}".format(framework, libname, env["target"])
+    library = env.SharedLibrary(target=target, source=sources)
+
+    import misc_framework_plist
+
+    def _write_plist(target, source, env):
+        # SCons reads a truthy return value as a failure exit code, so this
+        # deliberately returns None.
+        misc_framework_plist.write(framework)
+
+    env.AddPostAction(library, _write_plist)
+elif env["platform"] == "ios":
+    # iOS extensions are static archives folded into the exported app binary,
+    # which is how the existing godot_resonance_audio addon ships too.
+    #
+    # Two things have to happen here that the shared-library platforms above get
+    # for free.
+    #
+    # 1. A static archive links nothing, so godot-cpp does not come along by
+    #    itself. Without merging it in, the archive holds only our three object
+    #    files and the *app* fails to link on every gdextension_interface_*
+    #    symbol.
+    #
+    # 2. Every GDExtension on iOS is a static library folded into one app
+    #    binary, and each one carries its own full copy of godot-cpp - roughly
+    #    32000 global symbols, identical in name across all of them. The linker
+    #    keeps exactly one definition of each, so whichever extension is
+    #    resolved first silently supplies godot::ClassDB, godot::StringName and
+    #    the rest to every other extension in the app. When those were built
+    #    against different godot-cpp versions the struct layouts disagree and
+    #    the *other* extension crashes on startup, inside its own class
+    #    registration, for no reason visible in its own code.
+    #
+    # So: prelink into a single relocatable object with ld -r, and use
+    # -exported_symbols_list to demote everything except the entry point to a
+    # private extern. Our godot-cpp becomes ours alone and collides with
+    # nobody. Anything added to exported.txt is shared with the whole app, so
+    # keep that list at exactly one line.
+    stem = "{}.ios.{}.{}".format(libname, env["target"], env["arch"])
+    godot_cpp_lib = "godot-cpp/bin/libgodot-cpp.ios.{}.{}{}".format(
+        env["target"], env["arch"], env["LIBSUFFIX"]
+    )
+    exported = env.Command(
+        "{}/exported.txt".format(out_dir),
+        [],
+        'echo "_direct_touch_library_init" > $TARGET',
+    )
+    env.NoClean(exported)
+    # ld will not prelink without being told what it is targeting, and the
+    # answer has to match what the objects were compiled for.
+    sdk_name = "iphonesimulator" if env["ios_simulator"] else "iphoneos"
+    sdk_version = subprocess.check_output(
+        ["xcrun", "--sdk", sdk_name, "--show-sdk-version"], text=True
+    ).strip()
+    ld_platform = "ios-simulator" if env["ios_simulator"] else "ios"
+
+    # Depend on the *objects*, not the sources: the command below names object
+    # paths directly, so SCons has to know it is responsible for building them.
+    # Passing the .cpp/.mm files here instead leaves them unbuilt on a clean
+    # checkout and ld fails with "file not found".
+    objects = env.Object(sources)
+
+    merged = env.Command(
+        "{}/{}.merged.o".format(out_dir, stem),
+        objects + [godot_cpp_lib, exported],
+        "ld -r -arch {} -platform_version {} {} {} -o $TARGET {} -force_load {} -exported_symbols_list {}".format(
+            env["arch"],
+            ld_platform,
+            env["ios_min_version"],
+            sdk_version,
+            " ".join(str(o.path) for o in objects),
+            godot_cpp_lib,
+            "{}/exported.txt".format(out_dir),
+        ),
+    )
+    target = "{}/{}{}".format(out_dir, stem, env["LIBSUFFIX"])
+    library = env.Command(target, merged, "libtool -static -o $TARGET $SOURCE")
+else:
+    target = "{}/{}{}{}".format(out_dir, libname, env["suffix"], env["SHLIBSUFFIX"])
+    library = env.SharedLibrary(target=target, source=sources)
+
+Default(library)
